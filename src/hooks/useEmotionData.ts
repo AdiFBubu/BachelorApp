@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 export type EmotionType = 'Anger' | 'Contempt' | 'Disgust' | 'Fear' | 'Happiness' | 'Sadness' | 'Surprise';
 
@@ -35,12 +35,17 @@ const BASELINE_EMOTIONS: EmotionData = {
   Surprise: 8,
 };
 
+const HISTORY_SAMPLE_INTERVAL_MS = 500;
+const HISTORY_RETENTION_MINUTES = 65;
+const MAX_HISTORY_POINTS = Math.ceil((HISTORY_RETENTION_MINUTES * 60 * 1000) / HISTORY_SAMPLE_INTERVAL_MS);
+
 export const useEmotionData = () => {
   const [currentEmotions, setCurrentEmotions] = useState<EmotionData>(BASELINE_EMOTIONS);
   const [emotionHistory, setEmotionHistory] = useState<EmotionSnapshot[]>([]);
   const [clinicalEvents, setClinicalEvents] = useState<ClinicalEvent[]>([]);
   const [spikeFlash, setSpikeFlash] = useState<EmotionType | null>(null);
   const [showBaseline, setShowBaseline] = useState(false);
+  const latestEmotionsRef = useRef<EmotionData>(BASELINE_EMOTIONS);
 
   const addClinicalEvent = useCallback((emotion: EmotionType, intensity: number) => {
     const now = new Date();
@@ -68,52 +73,78 @@ export const useEmotionData = () => {
     setClinicalEvents(prev => [event, ...prev].slice(0, 20));
   }, []);
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setCurrentEmotions(prev => {
-        const newEmotions = { ...prev };
-        const emotions = Object.keys(newEmotions) as EmotionType[];
+  const mapProbsToEmotionData = (probs: Record<string, number>): EmotionData => {
+    const out: EmotionData = { Anger: 0, Contempt: 0, Disgust: 0, Fear: 0, Happiness: 0, Sadness: 0, Surprise: 0 };
+    const find = (label: string) => {
+      for (const k in probs) {
+        if (k.toLowerCase() === label.toLowerCase()) return probs[k];
+      }
+      return undefined;
+    };
 
-        emotions.forEach(emotion => {
-          const shouldSpike = Math.random() < 0.15;
+    (Object.keys(out) as EmotionType[]).forEach((k) => {
+      const v = find(k);
+      const normalized = (v ?? 0) <= 1 ? (v ?? 0) * 100 : (v ?? 0);
+      out[k] = Math.max(0, Math.min(100, normalized));
+    });
 
-          if (shouldSpike) {
-            const spikeIntensity = Math.random() * 40 + 20;
-            newEmotions[emotion] = Math.min(100, newEmotions[emotion] + spikeIntensity);
+    return out;
+  };
 
-            if (spikeIntensity > 30) {
-              setSpikeFlash(emotion);
-              setTimeout(() => setSpikeFlash(null), 300);
-              addClinicalEvent(emotion, newEmotions[emotion]);
-            }
-          } else {
-            const drift = (Math.random() - 0.5) * 8;
-            const baseline = BASELINE_EMOTIONS[emotion];
-            const decay = (newEmotions[emotion] - baseline) * 0.15;
-            newEmotions[emotion] = Math.max(0, Math.min(100, newEmotions[emotion] + drift - decay));
-          }
-        });
+  const resetEmotionSession = useCallback(() => {
+    setCurrentEmotions(BASELINE_EMOTIONS);
+    setEmotionHistory([]);
+    setClinicalEvents([]);
+    setSpikeFlash(null);
+    latestEmotionsRef.current = BASELINE_EMOTIONS;
+  }, []);
 
-        return newEmotions;
-      });
-    }, 150);
+  const setExternalEmotions = useCallback((probs: Record<string, number> | null) => {
+    if (probs === null) {
+      setCurrentEmotions(BASELINE_EMOTIONS);
+      latestEmotionsRef.current = BASELINE_EMOTIONS;
+      return;
+    }
+    
+    // Map and update emotions atomically
+    const mapped = mapProbsToEmotionData(probs);
+    setCurrentEmotions(mapped);
+    latestEmotionsRef.current = mapped;
 
-    return () => clearInterval(interval);
+    // Detect strong spike and add clinical event
+    const entries = Object.entries(mapped) as [EmotionType, number][];
+    if (entries.length > 0) {
+      const max = entries.reduce((acc, cur) => (cur[1] > acc[1] ? cur : acc), entries[0]);
+      if (max && max[1] > 60) {
+        setSpikeFlash(max[0]);
+        setTimeout(() => setSpikeFlash(null), 300);
+        addClinicalEvent(max[0], max[1]);
+      }
+    }
   }, [addClinicalEvent]);
 
   useEffect(() => {
-    const historyInterval = setInterval(() => {
+    // No random data generation - only use real model probabilities
+    // When no external probabilities are present, stay at baseline
+  }, []);
+
+  useEffect(() => {
+    latestEmotionsRef.current = currentEmotions;
+  }, [currentEmotions]);
+
+  useEffect(() => {
+    const historyInterval = window.setInterval(() => {
       setEmotionHistory(prev => {
         const newSnapshot: EmotionSnapshot = {
-          ...currentEmotions,
+          ...latestEmotionsRef.current,
           timestamp: Date.now(),
         };
-        return [...prev, newSnapshot].slice(-50);
+        return [...prev, newSnapshot].slice(-MAX_HISTORY_POINTS);
       });
-    }, 500);
+    }, HISTORY_SAMPLE_INTERVAL_MS);
 
-    return () => clearInterval(historyInterval);
-  }, [currentEmotions]);
+    return () => window.clearInterval(historyInterval);
+  }, []);
 
   return {
     currentEmotions: showBaseline ? BASELINE_EMOTIONS : currentEmotions,
@@ -123,5 +154,7 @@ export const useEmotionData = () => {
     spikeFlash,
     showBaseline,
     setShowBaseline,
+    resetEmotionSession,
+    setExternalEmotions,
   };
 };

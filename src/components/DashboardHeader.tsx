@@ -4,9 +4,27 @@ interface DashboardHeaderProps {
   clinicalStatus: 'normal' | 'high-risk' | 'positive';
   showBaseline: boolean;
   onToggleBaseline: () => void;
+  showLiveMonitor: boolean;
+  onToggleLiveMonitor: () => void;
+  showClinicalInsights: boolean;
+  onToggleClinicalInsights: () => void;
+  panelOpen: boolean;
+  onTogglePanel: () => void;
+  onLogout: () => void;
 }
 
-export const DashboardHeader = ({ clinicalStatus, showBaseline, onToggleBaseline }: DashboardHeaderProps) => {
+export const DashboardHeader = ({
+  clinicalStatus,
+  showBaseline,
+  onToggleBaseline,
+  showLiveMonitor,
+  onToggleLiveMonitor,
+  showClinicalInsights,
+  onToggleClinicalInsights,
+  panelOpen,
+  onTogglePanel,
+  onLogout,
+}: DashboardHeaderProps) => {
   const statusConfig = {
     normal: {
       label: 'Normal Session',
@@ -66,10 +84,43 @@ export const DashboardHeader = ({ clinicalStatus, showBaseline, onToggleBaseline
             {showBaseline ? 'Viewing Baseline' : 'Show Baseline'}
           </button>
 
+          <button
+            onClick={onToggleLiveMonitor}
+            className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+              showLiveMonitor ? 'bg-teal-500 text-white' : 'bg-slate-800 text-slate-300'
+            }`}
+          >
+            Live Monitor
+          </button>
+
+          <button
+            onClick={onToggleClinicalInsights}
+            className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+              showClinicalInsights ? 'bg-teal-500 text-white' : 'bg-slate-800 text-slate-300'
+            }`}
+          >
+            Insights
+          </button>
+
           <div className="flex items-center space-x-2 px-4 py-2 bg-slate-800 rounded-lg">
             <Zap className="w-4 h-4 text-teal-400" />
             <span className="text-sm text-slate-300">CSNN Active</span>
           </div>
+
+          <button
+            onClick={onTogglePanel}
+            className="px-3 py-2 rounded-lg text-sm bg-slate-800 text-slate-300 hover:bg-slate-700"
+            title={panelOpen ? 'Hide panel' : 'Show panel'}
+          >
+            {panelOpen ? '← Hide Panel' : '→ Show Panel'}
+          </button>
+
+          <button
+            onClick={onLogout}
+            className="px-3 py-2 rounded-lg text-sm bg-red-600 text-white hover:bg-red-500"
+          >
+            Logout
+          </button>
         </div>
       </div>
     </div>

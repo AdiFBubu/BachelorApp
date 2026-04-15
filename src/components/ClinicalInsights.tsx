@@ -17,7 +17,7 @@ const emotionIcons: Record<EmotionType, string> = {
 
 export const ClinicalInsights = ({ events }: ClinicalInsightsProps) => {
   return (
-    <div className="bg-slate-900/50 rounded-lg p-6 border border-slate-800 h-full flex flex-col">
+    <div className="bg-slate-900/50 rounded-lg p-6 border border-slate-800 h-full min-h-0 flex flex-col">
       <div className="flex items-center space-x-2 mb-4">
         <FileText className="w-5 h-5 text-teal-400" />
         <h3 className="text-white font-semibold">Clinical Insights</h3>
@@ -31,7 +31,7 @@ export const ClinicalInsights = ({ events }: ClinicalInsightsProps) => {
           </div>
         </div>
       ) : (
-        <div className="flex-1 overflow-y-auto space-y-3 pr-2" style={{ maxHeight: '600px' }}>
+        <div className="flex-1 overflow-y-auto space-y-3 pr-2">
           {events.map((event) => (
             <div
               key={event.id}

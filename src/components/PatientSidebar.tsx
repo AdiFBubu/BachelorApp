@@ -1,11 +1,13 @@
 import { User, Clock, Activity } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { DoctorPatientSummary } from '../types/hospital';
 
 interface PatientSidebarProps {
   riskLevel: 'Low' | 'Medium' | 'High';
+  patient?: DoctorPatientSummary;
 }
 
-export const PatientSidebar = ({ riskLevel }: PatientSidebarProps) => {
+export const PatientSidebar = ({ riskLevel, patient }: PatientSidebarProps) => {
   const [sessionDuration, setSessionDuration] = useState(0);
 
   useEffect(() => {
@@ -28,6 +30,13 @@ export const PatientSidebar = ({ riskLevel }: PatientSidebarProps) => {
     High: 'text-red-400 bg-red-400/10 border-red-400/30',
   };
 
+  const displayName = patient?.fullName || 'Sarah Mitchell';
+  const displayId = patient?.nationalId || 'NP-2847';
+  const diagnosis = patient?.diagnosis || 'Not specified';
+  const wardName = patient ? `${patient.ward.name}` : 'Ward A';
+  const bedLabel = patient?.bed.label || 'A-02';
+  const checkedIn = patient ? new Date(patient.checkedInAt).toLocaleString() : '-';
+
   return (
     <div className="bg-slate-900/50 border-r border-slate-800 p-6 space-y-6">
       <div className="flex items-center space-x-3 pb-4 border-b border-slate-800">
@@ -35,8 +44,8 @@ export const PatientSidebar = ({ riskLevel }: PatientSidebarProps) => {
           <User className="w-6 h-6 text-white" />
         </div>
         <div>
-          <h2 className="text-white font-semibold">Sarah Mitchell</h2>
-          <p className="text-slate-400 text-sm">ID: NP-2847</p>
+          <h2 className="text-white font-semibold">{displayName}</h2>
+          <p className="text-slate-400 text-sm">ID: {displayId}</p>
         </div>
       </div>
 
@@ -63,20 +72,20 @@ export const PatientSidebar = ({ riskLevel }: PatientSidebarProps) => {
           <h3 className="text-slate-300 text-sm font-medium">Patient Info</h3>
           <div className="space-y-2 text-sm">
             <div className="flex justify-between">
-              <span className="text-slate-400">Age</span>
-              <span className="text-slate-200">34</span>
-            </div>
-            <div className="flex justify-between">
               <span className="text-slate-400">Diagnosis</span>
-              <span className="text-slate-200">GAD, MDD</span>
+              <span className="text-slate-200">{diagnosis}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-400">Session #</span>
-              <span className="text-slate-200">12</span>
+              <span className="text-slate-400">Ward</span>
+              <span className="text-slate-200">{wardName}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-400">Provider</span>
-              <span className="text-slate-200">Dr. Chen</span>
+              <span className="text-slate-400">Bed</span>
+              <span className="text-slate-200">{bedLabel}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Checked in</span>
+              <span className="text-slate-200 text-right max-w-[140px]">{checkedIn}</span>
             </div>
           </div>
         </div>

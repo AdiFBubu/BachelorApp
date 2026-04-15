@@ -9,7 +9,7 @@ interface VideoFeedProps {
 
 export const VideoFeed = ({ isLive, spikeFlash, showBaseline }: VideoFeedProps) => {
   return (
-    <div className="relative bg-slate-900 rounded-lg overflow-hidden aspect-video">
+    <div className="relative bg-slate-900 rounded-lg aspect-video">
       <div className="absolute inset-0 bg-gradient-to-br from-slate-800 to-slate-900 flex items-center justify-center">
         <div className="text-center space-y-4">
           <Video className="w-16 h-16 text-slate-600 mx-auto" />
