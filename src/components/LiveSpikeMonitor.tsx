@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { useEffect, useMemo, useState } from 'react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Brush } from 'recharts';
 import { EmotionSnapshot, EmotionType } from '../hooks/useEmotionData';
 import { Activity } from 'lucide-react';
 
@@ -33,6 +33,116 @@ const intervalMs: Record<Exclude<IntervalKey, '7d'>, number> = {
   '3d': 3 * 24 * 60 * 60 * 1000,
 };
 
+const MAX_VISIBLE_POINTS = 420;
+const MIN_ZOOM_POINTS = 24;
+const MIN_BRUSH_SPAN_POINTS = 6;
+
+type ZoomRange = {
+  startIndex: number;
+  endIndex: number;
+};
+
+const pointScore = (point: EmotionSnapshot, trackedEmotions: EmotionType[]) => {
+  if (trackedEmotions.length === 0) return 0;
+
+  let score = 0;
+  for (const emotion of trackedEmotions) {
+    score = Math.max(score, point[emotion]);
+  }
+  return score;
+};
+
+const downsampleEmotionPoints = (
+  points: EmotionSnapshot[],
+  trackedEmotions: EmotionType[],
+  maxPoints: number,
+) => {
+  if (points.length <= maxPoints) {
+    return points;
+  }
+
+  const bucketCount = Math.max(1, Math.floor(maxPoints / 2));
+  const bucketSize = points.length / bucketCount;
+  const uniqueByTimestamp = new Map<number, EmotionSnapshot>();
+
+  uniqueByTimestamp.set(points[0].timestamp, points[0]);
+
+  for (let bucket = 0; bucket < bucketCount; bucket++) {
+    const bucketStart = Math.floor(bucket * bucketSize);
+    const bucketEnd = Math.min(points.length - 1, Math.floor((bucket + 1) * bucketSize) - 1);
+    if (bucketStart > bucketEnd) continue;
+
+    let minPoint = points[bucketStart];
+    let maxPoint = points[bucketStart];
+    let minScore = pointScore(points[bucketStart], trackedEmotions);
+    let maxScore = minScore;
+
+    for (let index = bucketStart + 1; index <= bucketEnd; index++) {
+      const candidate = points[index];
+      const score = pointScore(candidate, trackedEmotions);
+
+      if (score < minScore) {
+        minScore = score;
+        minPoint = candidate;
+      }
+
+      if (score > maxScore) {
+        maxScore = score;
+        maxPoint = candidate;
+      }
+    }
+
+    uniqueByTimestamp.set(minPoint.timestamp, minPoint);
+    uniqueByTimestamp.set(maxPoint.timestamp, maxPoint);
+  }
+
+  uniqueByTimestamp.set(points[points.length - 1].timestamp, points[points.length - 1]);
+
+  return Array.from(uniqueByTimestamp.values()).sort((a, b) => a.timestamp - b.timestamp);
+};
+
+const clampZoomRange = (range: ZoomRange, totalPoints: number): ZoomRange | null => {
+  if (totalPoints <= 1) return null;
+
+  const maxIndex = totalPoints - 1;
+  const startIndex = Math.max(0, Math.min(range.startIndex, maxIndex));
+  const endIndex = Math.max(startIndex, Math.min(range.endIndex, maxIndex));
+
+  if (startIndex === 0 && endIndex === maxIndex) {
+    return null;
+  }
+
+  return { startIndex, endIndex };
+};
+
+const ensureMinimumSpan = (
+  range: ZoomRange,
+  totalPoints: number,
+  minimumSpan: number,
+): ZoomRange => {
+  const maxIndex = totalPoints - 1;
+  const span = range.endIndex - range.startIndex + 1;
+  if (span >= minimumSpan || totalPoints <= minimumSpan) {
+    return range;
+  }
+
+  const center = Math.floor((range.startIndex + range.endIndex) / 2);
+  let startIndex = center - Math.floor(minimumSpan / 2);
+  let endIndex = startIndex + minimumSpan - 1;
+
+  if (startIndex < 0) {
+    startIndex = 0;
+    endIndex = minimumSpan - 1;
+  }
+
+  if (endIndex > maxIndex) {
+    endIndex = maxIndex;
+    startIndex = Math.max(0, endIndex - minimumSpan + 1);
+  }
+
+  return { startIndex, endIndex };
+};
+
 export const LiveSpikeMonitor = ({ emotionHistory }: LiveSpikeMonitorProps) => {
   const [selectedEmotions, setSelectedEmotions] = useState<EmotionType[]>([
     'Anger',
@@ -41,10 +151,36 @@ export const LiveSpikeMonitor = ({ emotionHistory }: LiveSpikeMonitorProps) => {
     'Sadness',
   ]);
   const [activeInterval, setActiveInterval] = useState<IntervalKey>('5m');
+  const [zoomRange, setZoomRange] = useState<ZoomRange | null>(null);
+  const [frozenHistory, setFrozenHistory] = useState<EmotionSnapshot[] | null>(null);
+
+  const isLiveStreaming = frozenHistory === null;
+  const sourceHistory = frozenHistory ?? emotionHistory;
+
+  const pauseLiveUpdates = () => {
+    setFrozenHistory((previous) => {
+      if (previous) return previous;
+      return [...emotionHistory];
+    });
+  };
+
+  const resumeLiveUpdates = () => {
+    setFrozenHistory(null);
+    setZoomRange(null);
+  };
+
+  const toggleLiveUpdates = () => {
+    if (isLiveStreaming) {
+      pauseLiveUpdates();
+      return;
+    }
+
+    resumeLiveUpdates();
+  };
 
   const sortedHistory = useMemo(() => {
-    return [...emotionHistory].sort((a, b) => a.timestamp - b.timestamp);
-  }, [emotionHistory]);
+    return [...sourceHistory].sort((a, b) => a.timestamp - b.timestamp);
+  }, [sourceHistory]);
 
   const timeFilteredHistory = useMemo(() => {
     if (activeInterval === '7d') {
@@ -55,7 +191,7 @@ export const LiveSpikeMonitor = ({ emotionHistory }: LiveSpikeMonitorProps) => {
       ? sortedHistory[sortedHistory.length - 1].timestamp
       : Date.now();
     const cutoff = latestTimestamp - intervalMs[activeInterval];
-    return sortedHistory.filter((point) => point.timestamp >= cutoff);
+    return sortedHistory.filter((point) => point.timestamp >= cutoff); // only include points within the selected time window
   }, [activeInterval, sortedHistory]);
 
   const chartData = useMemo(() => {
@@ -70,6 +206,107 @@ export const LiveSpikeMonitor = ({ emotionHistory }: LiveSpikeMonitorProps) => {
       Surprise: snapshot.Surprise,
     }));
   }, [timeFilteredHistory]);
+
+  useEffect(() => {
+    setZoomRange(null);
+  }, [activeInterval]);
+
+  const overviewChartData = useMemo(() => {
+    return downsampleEmotionPoints(chartData, selectedEmotions, MAX_VISIBLE_POINTS);
+  }, [chartData, selectedEmotions]);
+
+  useEffect(() => {
+    setZoomRange((previous) => {
+      if (!previous) return previous;
+      return clampZoomRange(previous, overviewChartData.length);
+    });
+  }, [overviewChartData.length]);
+
+  const visiblePointCount = useMemo(() => {
+    if (overviewChartData.length === 0) {
+      return 0;
+    }
+
+    if (!zoomRange) {
+      return overviewChartData.length;
+    }
+
+    const normalized = clampZoomRange(zoomRange, overviewChartData.length);
+    if (!normalized) {
+      return overviewChartData.length;
+    }
+
+    return normalized.endIndex - normalized.startIndex + 1;
+  }, [overviewChartData, zoomRange]);
+
+  const isZoomActive = zoomRange !== null;
+  const brushStartIndex = zoomRange?.startIndex ?? 0;
+  const brushEndIndex = zoomRange?.endIndex ?? Math.max(overviewChartData.length - 1, 0);
+
+  const handleBrushChange = (next: { startIndex?: number; endIndex?: number } | undefined) => {
+    if (!next) return;
+
+    if (typeof next.startIndex !== 'number' || typeof next.endIndex !== 'number') {
+      return;
+    }
+
+    pauseLiveUpdates();
+
+    const normalized = clampZoomRange(
+      { startIndex: next.startIndex, endIndex: next.endIndex },
+      overviewChartData.length,
+    );
+
+    if (!normalized) {
+      setZoomRange(null);
+      return;
+    }
+
+    setZoomRange(
+      ensureMinimumSpan(normalized, overviewChartData.length, MIN_BRUSH_SPAN_POINTS),
+    );
+  };
+
+  const applyRelativeZoom = (factor: number) => {
+    if (overviewChartData.length <= 1) return;
+
+    pauseLiveUpdates();
+
+    const maxIndex = overviewChartData.length - 1;
+    const currentStart = zoomRange?.startIndex ?? 0;
+    const currentEnd = zoomRange?.endIndex ?? maxIndex;
+    const currentSpan = currentEnd - currentStart + 1;
+
+    const targetSpan = Math.max(
+      MIN_ZOOM_POINTS,
+      Math.min(maxIndex + 1, Math.round(currentSpan * factor)),
+    );
+
+    if (targetSpan >= maxIndex + 1) {
+      setZoomRange(null);
+      return;
+    }
+
+    const center = Math.floor((currentStart + currentEnd) / 2);
+    let nextStart = center - Math.floor(targetSpan / 2);
+    let nextEnd = nextStart + targetSpan - 1;
+
+    if (nextStart < 0) {
+      nextStart = 0;
+      nextEnd = targetSpan - 1;
+    }
+
+    if (nextEnd > maxIndex) {
+      nextEnd = maxIndex;
+      nextStart = Math.max(0, nextEnd - targetSpan + 1);
+    }
+
+    setZoomRange({ startIndex: nextStart, endIndex: nextEnd });
+  };
+
+  const resetZoom = () => {
+    setZoomRange(null);
+  };
 
   const toggleEmotion = (emotion: EmotionType) => {
     setSelectedEmotions((previous) => {
@@ -110,8 +347,22 @@ export const LiveSpikeMonitor = ({ emotionHistory }: LiveSpikeMonitorProps) => {
           <h3 className="text-white font-semibold">Live Spike Monitor</h3>
         </div>
         <div className="flex items-center space-x-2">
-          <div className="w-2 h-2 bg-teal-400 rounded-full animate-pulse"></div>
-          <span className="text-teal-400 text-sm">Streaming</span>
+          <div
+            className={`w-2 h-2 rounded-full ${
+              isLiveStreaming ? 'bg-teal-400 animate-pulse' : 'bg-amber-400'
+            }`}
+          ></div>
+          <span className={`text-sm ${isLiveStreaming ? 'text-teal-400' : 'text-amber-300'}`}>
+            {isLiveStreaming ? 'Streaming' : 'Paused for analysis'}
+          </span>
+          {!isLiveStreaming && (
+            <button
+              onClick={resumeLiveUpdates}
+              className="rounded px-2.5 py-1 text-xs bg-teal-500 text-white hover:bg-teal-400"
+            >
+              Resume live
+            </button>
+          )}
         </div>
       </div>
 
@@ -135,6 +386,45 @@ export const LiveSpikeMonitor = ({ emotionHistory }: LiveSpikeMonitorProps) => {
                 : `Last ${interval}`}
             </button>
           ))}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs uppercase tracking-wide text-slate-400">View</span>
+          <button
+            onClick={() => applyRelativeZoom(0.5)}
+            disabled={overviewChartData.length <= MIN_ZOOM_POINTS}
+            className="rounded px-2.5 py-1 text-xs bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Zoom in
+          </button>
+          <button
+            onClick={() => applyRelativeZoom(2)}
+            disabled={overviewChartData.length <= MIN_ZOOM_POINTS}
+            className="rounded px-2.5 py-1 text-xs bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Zoom out
+          </button>
+          <button
+            onClick={resetZoom}
+            disabled={!isZoomActive}
+            className="rounded px-2.5 py-1 text-xs bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Reset zoom
+          </button>
+          <button
+            onClick={toggleLiveUpdates}
+            className={`rounded px-2.5 py-1 text-xs text-white transition-colors ${
+              isLiveStreaming
+                ? 'bg-amber-500 hover:bg-amber-400'
+                : 'bg-teal-500 hover:bg-teal-400'
+            }`}
+          >
+            {isLiveStreaming ? 'Pause for analysis' : 'Resume live updates'}
+          </button>
+          <span className="text-xs text-slate-400">
+            {visiblePointCount} / {chartData.length} points shown
+            {chartData.length > overviewChartData.length ? ' (adaptive sampling)' : ''}
+          </span>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -173,11 +463,11 @@ export const LiveSpikeMonitor = ({ emotionHistory }: LiveSpikeMonitorProps) => {
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartData} margin={{ top: 8, right: 10, bottom: 8, left: 0 }}>
+            <LineChart data={overviewChartData} margin={{ top: 8, right: 10, bottom: 8, left: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
               <XAxis
                 type="number"
-                dataKey="timestamp"
+                dataKey="timestamp" // key for x-axis values
                 domain={['dataMin', 'dataMax']}
                 tickFormatter={formatTick}
                 stroke="#64748b"
@@ -191,7 +481,18 @@ export const LiveSpikeMonitor = ({ emotionHistory }: LiveSpikeMonitorProps) => {
                 domain={[0, 100]}
               />
               <Tooltip
-                labelFormatter={(value: number) => new Date(value).toLocaleString()}
+                labelFormatter={(value) => {
+                  if (typeof value === 'number') {
+                    return new Date(value).toLocaleString();
+                  }
+                  if (typeof value === 'string') {
+                    const parsed = Number(value);
+                    if (Number.isFinite(parsed)) {
+                      return new Date(parsed).toLocaleString();
+                    }
+                  }
+                  return String(value ?? '');
+                }}
                 contentStyle={{
                   backgroundColor: '#0f172a',
                   border: '1px solid #334155',
@@ -205,13 +506,23 @@ export const LiveSpikeMonitor = ({ emotionHistory }: LiveSpikeMonitorProps) => {
                 <Line
                   key={emotion}
                   type="monotone"
-                  dataKey={emotion}
+                  dataKey={emotion} // key for y-axis values
                   stroke={emotionColor[emotion]}
                   strokeWidth={2}
                   dot={false}
                   isAnimationActive={false}
                 />
               ))}
+              <Brush
+                dataKey="timestamp"
+                startIndex={brushStartIndex}
+                endIndex={brushEndIndex}
+                onChange={handleBrushChange}
+                stroke="#14b8a6"
+                height={26}
+                travellerWidth={10}
+                tickFormatter={formatTick}
+              />
             </LineChart>
           </ResponsiveContainer>
         )}

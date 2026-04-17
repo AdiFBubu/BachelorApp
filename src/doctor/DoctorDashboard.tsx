@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { backendPaths } from '../config/backend';
 import { useAuth } from '../hooks/useAuth';
-import { useEmotionData, ClinicalEvent, EmotionSnapshot, EmotionType } from '../hooks/useEmotionData';
+import { useEmotionData, EmotionSnapshot } from '../hooks/useEmotionData';
 import { DashboardHeader } from '../components/DashboardHeader';
 import { PatientSidebar } from '../components/PatientSidebar';
 import { CameraStreamer } from '../components/CameraStreamer';
@@ -8,8 +9,6 @@ import { LiveSpikeMonitor } from '../components/LiveSpikeMonitor';
 import { SentimentDistribution } from '../components/SentimentDistribution';
 import { ClinicalInsights } from '../components/ClinicalInsights';
 import {
-  AlertSeverity,
-  AlertType,
   DoctorPatientDetailPayload,
   DoctorPatientSummary,
 } from '../types/hospital';
@@ -17,6 +16,8 @@ import {
 type PatientsResponse = {
   patients: DoctorPatientSummary[];
 };
+
+type DetailLoadMode = 'initial' | 'background';
 
 type RiskLevel = 'Low' | 'Medium' | 'High';
 
@@ -34,21 +35,6 @@ const riskLevelOrder: Record<RiskLevel, number> = {
   High: 3,
 };
 
-const severityIntensity: Record<AlertSeverity, number> = {
-  LOW: 68,
-  MEDIUM: 82,
-  HIGH: 95,
-};
-
-const alertEmotion: Record<AlertType, EmotionType> = {
-  DISTRESS: 'Fear',
-  PAIN: 'Sadness',
-};
-
-const formatTime = (value: string) => {
-  return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-};
-
 const formatDate = (value: string) => {
   return new Date(value).toLocaleString();
 };
@@ -60,8 +46,6 @@ export const DoctorDashboard = () => {
     emotionHistory,
     clinicalEvents,
     spikeFlash,
-    showBaseline,
-    setShowBaseline,
     resetEmotionSession,
     setExternalEmotions,
   } = useEmotionData();
@@ -76,7 +60,7 @@ export const DoctorDashboard = () => {
   const [error, setError] = useState<string | null>(null);
   const [showLiveMonitor, setShowLiveMonitor] = useState(true);
   const [showClinicalInsights, setShowClinicalInsights] = useState(true);
-  const [panelOpen, setPanelOpen] = useState(true);
+  const [panelOpen, setPanelOpen] = useState(false);
   const [riskNotification, setRiskNotification] = useState<RiskNotification | null>(null);
   const lastReadingPushAtRef = useRef(0);
   const previousRiskLevelRef = useRef<RiskLevel | null>(null);
@@ -97,8 +81,8 @@ export const DoctorDashboard = () => {
     setError(null);
     try {
       const [availableData, myData] = await Promise.all([
-        requestJson<PatientsResponse>('/api/doctor/patients/available'),
-        requestJson<PatientsResponse>('/api/doctor/patients/mine'),
+        requestJson<PatientsResponse>(backendPaths.doctor.availablePatients),
+        requestJson<PatientsResponse>(backendPaths.doctor.myPatients),
       ]);
 
       setAvailablePatients(availableData.patients);
@@ -124,30 +108,49 @@ export const DoctorDashboard = () => {
     void refreshPatientLists();
   }, [refreshPatientLists]);
 
+  const loadPatientDetail = useCallback(async (patientId: string, mode: DetailLoadMode = 'initial') => {
+    if (mode === 'initial') {
+      setLoadingDetail(true);
+      setError(null);
+    }
+
+    try {
+      const detail = await requestJson<DoctorPatientDetailPayload>(
+        backendPaths.doctor.patientDetail(patientId, '7d'),
+      );
+      setPatientDetail(detail);
+    } catch (err) {
+      if (mode === 'initial') {
+        const message = err instanceof Error ? err.message : 'Unable to load patient detail';
+        setError(message);
+      }
+    } finally {
+      if (mode === 'initial') {
+        setLoadingDetail(false);
+      }
+    }
+  }, [requestJson]);
+
   useEffect(() => {
     if (!selectedPatientId) {
       setPatientDetail(null);
       return;
     }
 
-    const loadDetail = async () => {
-      setLoadingDetail(true);
-      setError(null);
-      try {
-        const detail = await requestJson<DoctorPatientDetailPayload>(
-          `/api/doctor/patients/${selectedPatientId}/detail?window=7d`,
-        );
-        setPatientDetail(detail);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'Unable to load patient detail';
-        setError(message);
-      } finally {
-        setLoadingDetail(false);
-      }
-    };
+    void loadPatientDetail(selectedPatientId, 'initial');
+  }, [selectedPatientId, loadPatientDetail]);
 
-    void loadDetail();
-  }, [selectedPatientId, requestJson]);
+  // useEffect(() => {
+  //   if (!selectedPatientId) {
+  //     return;
+  //   }
+
+  //   const interval = window.setInterval(() => {
+  //     void loadPatientDetail(selectedPatientId, 'background');
+  //   }, 15000);
+
+  //   return () => window.clearInterval(interval);
+  // }, [selectedPatientId, loadPatientDetail]);
 
   useEffect(() => {
     resetEmotionSession();
@@ -160,7 +163,7 @@ export const DoctorDashboard = () => {
     setBusyPatientId(patientId);
     setError(null);
     try {
-      await requestJson<{ patient: DoctorPatientSummary }>(`/api/doctor/patients/${patientId}/take`, {
+      await requestJson<{ patient: DoctorPatientSummary }>(backendPaths.doctor.takePatient(patientId), {
         method: 'POST',
       });
       await refreshPatientLists();
@@ -173,6 +176,7 @@ export const DoctorDashboard = () => {
     }
   };
 
+  // probs: the probabilities inferred by the AI model (they come from CameraStreamer via WebSocket)
   const handleProbabilities = useCallback(async (probs: Record<string, number>) => {
     setExternalEmotions(probs);
 
@@ -188,17 +192,22 @@ export const DoctorDashboard = () => {
     lastReadingPushAtRef.current = now;
 
     try {
-      await api(`/api/doctor/patients/${selectedPatientId}/readings`, {
+      await api(backendPaths.doctor.readings(selectedPatientId), {
         method: 'POST',
         body: JSON.stringify({
           probabilities: probs,
           timestamp: new Date(now).toISOString(),
         }),
       });
+
+      // Keep persisted and derived alert sections in sync with latest backend processing.
+      // may be improved in the future in terms of efficiency by pushing only new alerts or using WebSocket for real-time updates instead of polling. / getting only the strictly necessary infos
+      // since the emotionHistory already keeps the current timeline of emotions
+      void loadPatientDetail(selectedPatientId, 'background');
     } catch {
       // Keep UI responsive even when persistence temporarily fails.
     }
-  }, [api, selectedPatientId, setExternalEmotions]);
+  }, [api, selectedPatientId, setExternalEmotions, loadPatientDetail]);
 
   const selectedPatient = useMemo(() => {
     return myPatients.find((patient) => patient.id === selectedPatientId) || null;
@@ -217,27 +226,30 @@ export const DoctorDashboard = () => {
     }));
   }, [patientDetail]);
 
-  const alertEvents = useMemo<ClinicalEvent[]>(() => {
-    return (patientDetail?.monitoring.alerts || []).map((alert) => ({
-      id: `alert-${alert.id}`,
-      timestamp: new Date(alert.createdAt).getTime(),
-      time: formatTime(alert.createdAt),
-      emotion: alertEmotion[alert.type],
-      intensity: severityIntensity[alert.severity],
-      message: alert.message,
-    }));
+  const currentMonitoringAlerts = useMemo(() => {
+    const monitoring = patientDetail?.monitoring;
+    if (!monitoring) return [];
+
+    return monitoring.currentAlerts || [];
   }, [patientDetail]);
 
-  const mergedClinicalEvents = useMemo(() => {
-    return [...alertEvents, ...clinicalEvents]
+  const prolongedMonitoringAlerts = useMemo(() => {
+    const monitoring = patientDetail?.monitoring;
+    if (!monitoring) return [];
+
+    return monitoring.prolongedAlerts || [];
+  }, [patientDetail]);
+
+  const clinicalInsightEvents = useMemo(() => { // update only when clinicalEvents change, not on every update
+    return [...clinicalEvents]
       .sort((a, b) => b.timestamp - a.timestamp)
-      .slice(0, 30);
-  }, [alertEvents, clinicalEvents]);
+      .slice(0, 20);
+  }, [clinicalEvents]);
 
   const clinicalStatus = useMemo(() => {
-    const hasCriticalAlert = (patientDetail?.monitoring.alerts || []).some(
-      (alert) => alert.severity === 'HIGH',
-    );
+    const allAlerts = [...currentMonitoringAlerts, ...prolongedMonitoringAlerts];
+
+    const hasCriticalAlert = allAlerts.some((alert) => alert.severity === 'HIGH');
 
     if (hasCriticalAlert || (currentEmotions.Anger > 60 && currentEmotions.Fear > 60)) {
       return 'high-risk';
@@ -246,7 +258,7 @@ export const DoctorDashboard = () => {
       return 'positive';
     }
     return 'normal';
-  }, [currentEmotions, patientDetail]);
+  }, [currentEmotions, currentMonitoringAlerts, prolongedMonitoringAlerts]);
 
   const riskLevel = useMemo<RiskLevel>(() => {
     const avgNegative = (currentEmotions.Anger + currentEmotions.Fear + currentEmotions.Sadness) / 3;
@@ -303,7 +315,7 @@ export const DoctorDashboard = () => {
       .filter((point) => Number.isFinite(point.timestamp))
       .sort((a, b) => a.timestamp - b.timestamp);
 
-    return merged.filter((point) => point.timestamp >= Date.now() - 7 * 24 * 60 * 60 * 1000);
+    return merged.filter((point) => point.timestamp >= Date.now() - 7 * 24 * 60 * 60 * 1000); // 7 days filter
   }, [emotionHistory, timelineHistory]);
 
   const borderGlow =
@@ -410,8 +422,6 @@ export const DoctorDashboard = () => {
           <div className="flex flex-col min-h-0 flex-1">
             <DashboardHeader
               clinicalStatus={clinicalStatus}
-              showBaseline={showBaseline}
-              onToggleBaseline={() => setShowBaseline(!showBaseline)}
               showLiveMonitor={showLiveMonitor}
               onToggleLiveMonitor={() => setShowLiveMonitor(!showLiveMonitor)}
               showClinicalInsights={showClinicalInsights}
@@ -420,18 +430,6 @@ export const DoctorDashboard = () => {
               onTogglePanel={() => setPanelOpen(!panelOpen)}
               onLogout={logout}
             />
-
-            <div className="px-6 py-3 border-b border-slate-800 bg-slate-900/40 flex items-center justify-between gap-4">
-              <div className="text-sm text-slate-300">
-                Monitoring source: <span className="text-teal-300 uppercase">{patientDetail?.monitoring.source || 'loading'}</span>
-                {patientDetail && !patientDetail.monitoring.influxConfigured && (
-                  <span className="ml-2 text-xs text-amber-300">(InfluxDB not configured, using fallback data)</span>
-                )}
-              </div>
-              <div className="text-xs text-slate-500">
-                Timeline filters are available inside Live Monitor.
-              </div>
-            </div>
 
             <div className="flex flex-1 overflow-hidden">
               <div className="w-72 overflow-y-auto">
@@ -447,7 +445,6 @@ export const DoctorDashboard = () => {
                       <CameraStreamer
                         isLive={true}
                         spikeFlash={spikeFlash}
-                        showBaseline={showBaseline}
                         onProbabilities={handleProbabilities}
                       />
                     </div>
@@ -515,7 +512,11 @@ export const DoctorDashboard = () => {
                   </div>
 
                   <div className="h-full bg-slate-900/80 rounded-lg p-4 border border-slate-800 overflow-auto">
-                    <ClinicalInsights events={mergedClinicalEvents} />
+                    <ClinicalInsights
+                      currentAlerts={currentMonitoringAlerts}
+                      prolongedAlerts={prolongedMonitoringAlerts}
+                      events={clinicalInsightEvents}
+                    />
                   </div>
                 </div>
               </div>

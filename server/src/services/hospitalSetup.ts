@@ -18,9 +18,9 @@ export async function ensureHospitalSeed() {
       await prisma.ward.create({
         data: {
           name: ward.name,
-          beds: {
-            create: ward.beds.map((label) => ({
-              label,
+          beds: { // relation name in Prisma schema
+            create: ward.beds.map((label) => ({ // create new bed records for each bed label
+              label, // <=> { label: label }
             })),
           },
         },

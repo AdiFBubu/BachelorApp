@@ -63,12 +63,12 @@ export const SentimentDistribution = ({ emotions, spikeFlash }: SentimentDistrib
         ))}
       </div>
 
-      <div className="mt-6 pt-4 border-t border-slate-800">
+      {/* <div className="mt-6 pt-4 border-t border-slate-800">
         <div className="flex items-center justify-between text-xs text-slate-400">
           <span>Detection Confidence</span>
           <span className="text-teal-400 font-semibold">94.7%</span>
         </div>
-      </div>
+      </div> */}
     </div>
   );
 };

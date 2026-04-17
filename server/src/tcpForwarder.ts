@@ -4,9 +4,9 @@ export class TcpModelClient {
   private host: string;
   private port: number;
   private socket: net.Socket | null = null;
-  private buffer: string = '';
-  private lineQueue: string[] = [];
-  private lineResolvers: ((line: string) => void)[] = [];
+  private buffer: string = ''; // each response is delimited by a newline
+  private lineQueue: string[] = []; // received data that hasn't been consumed yet
+  private lineResolvers: ((line: string) => void)[] = []; // if the data isn't received yet, we store the resolver to call when it arrives
 
   constructor(host: string, port: number) {
     this.host = host;
@@ -39,6 +39,7 @@ export class TcpModelClient {
   private onSocketData(data: Buffer) {
     this.buffer += data.toString();
     // Process complete lines from buffer
+    // TCP doesn't guarantee message boundaries, so we may receive partial or multiple responses in one data event
     while (true) {
       const idx = this.buffer.indexOf('\n');
       if (idx < 0) break;
@@ -67,12 +68,13 @@ export class TcpModelClient {
 
   async sendFrame(jpegBuffer: Buffer): Promise<any> {
     if (!this.socket) throw new Error('Not connected');
-    const lenBuf = Buffer.alloc(4);
+    // Protocol: send the photo length followed by JPEG data, then wait for a line response
+    const lenBuf = Buffer.alloc(4); // 4 bytes for uint32 length prefix
     lenBuf.writeUInt32BE(jpegBuffer.length, 0);
     await new Promise<void>((resolve, reject) => {
-      this.socket!.write(lenBuf, (err) => {
+      this.socket!.write(lenBuf, (err) => { // length prefix
         if (err) return reject(err);
-        this.socket!.write(jpegBuffer, (err2) => {
+        this.socket!.write(jpegBuffer, (err2) => { // actual JPEG data
           if (err2) return reject(err2);
           resolve();
         });
@@ -88,6 +90,7 @@ export class TcpModelClient {
 }
 
 // Usage example:
+
 // const client = new TcpModelClient('127.0.0.1', 12345);
 // await client.connect();
 // const resp = await client.sendFrame(jpegBuffer);

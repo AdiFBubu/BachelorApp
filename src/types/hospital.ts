@@ -58,7 +58,8 @@ export interface DoctorPatientDetailPayload {
     window: '24h' | '7d';
     availableWindows: Array<'24h' | '7d'>;
     timeline: MonitoringPoint[];
-    alerts: MonitoringAlert[];
+    currentAlerts?: MonitoringAlert[];
+    prolongedAlerts?: MonitoringAlert[];
     source: 'influx' | 'postgres' | 'synthetic';
     influxConfigured: boolean;
   };

@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import { backendPaths, toBackendUrl } from '../config/backend';
 
 export type UserRole = 'DOCTOR' | 'ADMIN';
 
@@ -28,13 +29,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const token = localStorage.getItem('accessToken');
     const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) } as any;
     if (token) headers['Authorization'] = `Bearer ${token}`;
-    return fetch(`http://localhost:4000${path}`, { ...opts, headers });
+    return fetch(toBackendUrl(path), { ...opts, headers });
   };
 
   async function loadMe() {
     setLoading(true);
     try {
-      const res = await api('/api/auth/me');
+      const res = await api(backendPaths.auth.me);
       if (res.ok) {
         const data = (await res.json()) as AuthUser;
         setUser(data);
@@ -53,12 +54,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function authAndStore(path: '/api/auth/login' | '/api/auth/register', payload: Record<string, unknown>) {
-    const res = await fetch(`http://localhost:4000${path}`, {
+  async function authAndStore(
+    path: typeof backendPaths.auth.login | typeof backendPaths.auth.register,
+    payload: Record<string, unknown>,
+  ) {
+    const res = await fetch(toBackendUrl(path), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
+
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Authentication failed');
 
@@ -75,17 +80,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }
 
   async function register(email: string, password: string, role: UserRole) {
-    await authAndStore('/api/auth/register', { email, password, role });
+    await authAndStore(backendPaths.auth.register, { email, password, role });
   }
 
   async function login(email: string, password: string) {
-    await authAndStore('/api/auth/login', { email, password });
+    await authAndStore(backendPaths.auth.login, { email, password });
   }
 
   async function logout() {
     const refreshToken = localStorage.getItem('refreshToken');
     try {
-      await fetch('http://localhost:4000/api/auth/logout', {
+      await fetch(toBackendUrl(backendPaths.auth.logout), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refreshToken }),

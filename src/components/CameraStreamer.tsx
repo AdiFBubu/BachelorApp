@@ -1,21 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
+import { BACKEND_WS_URL } from '../config/backend';
 import { EmotionType } from '../hooks/useEmotionData';
+import WebSocketClient from '../lib/websocketClient';
 
 interface CameraStreamerProps {
   isLive: boolean;
   spikeFlash: EmotionType | null;
-  showBaseline: boolean;
   onProbabilities?: (probs: Record<string, number>) => void;
 }
 
-export const CameraStreamer = ({ isLive, spikeFlash, showBaseline, onProbabilities }: CameraStreamerProps) => {
+export const CameraStreamer = ({ isLive, spikeFlash, onProbabilities }: CameraStreamerProps) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const wsRef = useRef<WebSocket | null>(null);
+  const wsClientRef = useRef<WebSocketClient | null>(null);
   const [streaming, setStreaming] = useState(false);
   const [recording, setRecording] = useState(false);
   const [connected, setConnected] = useState(false);
-  const [lastResp, setLastResp] = useState<any>(null);
+  const [lastResp, setLastResp] = useState<unknown>(null);
   const cycleTimerRef = useRef<number | null>(null);
   const captureAbortRef = useRef<boolean>(false);
 
@@ -25,7 +26,7 @@ export const CameraStreamer = ({ isLive, spikeFlash, showBaseline, onProbabiliti
   const BATCH_SIZE = 10;
   const BATCH_INTERVAL_MS = 300; // 10 frames in ~3s
   const PAUSE_MS = 10000; // 10s pause
-  const WS_URL = (import.meta.env && (import.meta.env as any).VITE_WS_URL) || `ws://${window.location.hostname}:4000/ws`;
+  const WS_URL = BACKEND_WS_URL;
 
   useEffect(() => {
     return () => {
@@ -47,28 +48,31 @@ export const CameraStreamer = ({ isLive, spikeFlash, showBaseline, onProbabiliti
   }, [isLive]);
 
   function connectWs() {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) return;
+    if (wsClientRef.current && wsClientRef.current.isOpen()) return;
     try {
-      const ws = new WebSocket(WS_URL);
-      ws.binaryType = 'arraybuffer';
-      ws.onopen = () => {
+      const client = new WebSocketClient(WS_URL, { binaryType: 'arraybuffer', autoReconnect: true, reconnectIntervalMs: 3000 });
+
+      client.onOpen = () => {
         setConnected(true);
       };
-      ws.onmessage = (ev) => {
+
+      client.onClose = () => {
+        setConnected(false);
+      };
+
+      client.onError = () => {
+        setConnected(false);
+      };
+
+      client.onParsedMessage = (parsed) => {
         try {
-          const text = typeof ev.data === 'string' ? ev.data : new TextDecoder().decode(ev.data as ArrayBuffer);
-          const parsed = JSON.parse(text);
           setLastResp(parsed);
           console.log('[CameraStreamer] Received:', JSON.stringify(parsed).substring(0, 300));
 
           if (onProbabilities && parsed && typeof parsed === 'object') {
-            // Check if we have probabilities to extract
-            let source = parsed.probabilities || parsed.result?.probabilities || null;
-
+            const source = parsed.probabilities || parsed.result?.probabilities || null;
             if (source && typeof source === 'object') {
               try {
-                // Map numeric indices to emotion names if needed
-                // Index mapping: 1=Anger, 2=Contempt, 3=Disgust, 4=Fear, 5=Happiness, 6=Sadness, 7=Surprise
                 const indexToEmotion: Record<string, string> = {
                   '1': 'Anger',
                   '2': 'Contempt',
@@ -81,7 +85,6 @@ export const CameraStreamer = ({ isLive, spikeFlash, showBaseline, onProbabiliti
 
                 const probs: Record<string, number> = {};
                 Object.keys(source).forEach((k) => {
-                  // Use emotion name if it's an index, otherwise use key as-is
                   const emotionKey = indexToEmotion[k] || k;
                   const v = source[k];
                   probs[emotionKey] = typeof v === 'number' ? v : Number(v);
@@ -98,16 +101,16 @@ export const CameraStreamer = ({ isLive, spikeFlash, showBaseline, onProbabiliti
           }
         } catch (err) {
           console.error('[CameraStreamer] Message parse error:', err);
-          setLastResp({ raw: ev.data });
+          setLastResp({ raw: parsed });
         }
       };
-      ws.onclose = () => {
-        setConnected(false);
+
+      client.onRawMessage = (raw) => {
+        setLastResp({ raw });
       };
-      ws.onerror = () => {
-        setConnected(false);
-      };
-      wsRef.current = ws;
+
+      client.connect();
+      wsClientRef.current = client;
     } catch (err) {
       console.error('WS connect error', err);
       setConnected(false);
@@ -115,9 +118,9 @@ export const CameraStreamer = ({ isLive, spikeFlash, showBaseline, onProbabiliti
   }
 
   function disconnectWs() {
-    if (wsRef.current) {
-      try { wsRef.current.close(); } catch {}
-      wsRef.current = null;
+    if (wsClientRef.current) {
+      try { wsClientRef.current.close(); } catch { /* ignore close errors */ }
+      wsClientRef.current = null;
     }
     setConnected(false);
   }
@@ -126,7 +129,7 @@ export const CameraStreamer = ({ isLive, spikeFlash, showBaseline, onProbabiliti
     if (streaming) return;
     try {
       connectWs();
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false }); // request camera access
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
@@ -137,13 +140,15 @@ export const CameraStreamer = ({ isLive, spikeFlash, showBaseline, onProbabiliti
         const c = document.createElement('canvas');
         c.width = TARGET_W;
         c.height = TARGET_H;
-        canvasRef.current = c;
+        canvasRef.current = c; // offscreen canvas for processing
       }
 
       setStreaming(true);
 
       // reset abort flag and start periodic recording cycle
       captureAbortRef.current = false;
+
+      // start first cycle immediately
       runCycle();
     } catch (err) {
       console.error('startStreaming error', err);
@@ -173,18 +178,23 @@ export const CameraStreamer = ({ isLive, spikeFlash, showBaseline, onProbabiliti
 
   function captureFrameAsArrayBuffer(): Promise<ArrayBuffer | null> {
     return new Promise((resolve) => {
+      // capture current video frame to canvas and get as ArrayBuffer
       const v = videoRef.current;
       const c = canvasRef.current;
       if (!v || !c) return resolve(null);
       const ctx = c.getContext('2d');
       if (!ctx) return resolve(null);
+
+      // this makes a "photo" of the current video frame at the desired resolution (TARGET_W x TARGET_H)
       ctx.drawImage(v, 0, 0, c.width, c.height);
+
+      // get JPEG blob (compressed file) and convert to ArrayBuffer (raw binary)
       c.toBlob(async (blob) => {
         if (!blob) return resolve(null);
         try {
           const ab = await blob.arrayBuffer();
           resolve(ab);
-        } catch (err) {
+        } catch {
           resolve(null);
         }
       }, 'image/jpeg', QUALITY);
@@ -198,13 +208,13 @@ export const CameraStreamer = ({ isLive, spikeFlash, showBaseline, onProbabiliti
       if (!videoRef.current || !videoRef.current.srcObject) break;
       try {
         const ab = await captureFrameAsArrayBuffer();
-        if (ab && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-          // send ArrayBuffer directly
-          wsRef.current.send(ab);
+        if (ab && wsClientRef.current && wsClientRef.current.isOpen()) {
+          wsClientRef.current.send(ab);
         }
       } catch (err) {
         console.warn('batch send error', err);
       }
+      // wait BATCH_INTERVAL_MS before capturing next frame
       await sleep(BATCH_INTERVAL_MS);
     }
   }
@@ -213,6 +223,7 @@ export const CameraStreamer = ({ isLive, spikeFlash, showBaseline, onProbabiliti
     // don't rely on React state `streaming` here (setState is async)
     if (captureAbortRef.current) return;
     setRecording(true);
+    // capture and send a batch of frames, then pause until next cycle
     await captureBatchAndSend();
     setRecording(false);
 
@@ -232,7 +243,6 @@ export const CameraStreamer = ({ isLive, spikeFlash, showBaseline, onProbabiliti
           <div className="text-slate-500 text-xs">Streaming to model via WebSocket</div>
           <div className="text-slate-500 text-xs mt-1">
             {isLive ? 'Session Live' : 'Session Paused'}
-            {showBaseline ? ' • Baseline mode' : ''}
             {spikeFlash ? ` • Spike: ${spikeFlash}` : ''}
           </div>
         </div>

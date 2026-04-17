@@ -1,6 +1,6 @@
 import { InfluxDB, Point } from '@influxdata/influxdb-client';
 
-export type TimelineWindow = '24h' | '7d';
+export type TimelineWindow = '24h' | '7d'; // how far back to query emotion history for, either last 24 hours or last 7 days
 
 export interface InfluxEmotionPoint {
   timestamp: string;
@@ -43,8 +43,8 @@ const influxClient = isEnabled
   ? new InfluxDB({ url: influxConfig.url, token: influxConfig.token })
   : null;
 
-const queryApi = influxClient ? influxClient.getQueryApi(influxConfig.org) : null;
-const writeApi = influxClient
+const queryApi = influxClient ? influxClient.getQueryApi(influxConfig.org) : null; // for reading
+const writeApi = influxClient // for writing
   ? influxClient.getWriteApi(influxConfig.org, influxConfig.bucket, 'ms')
   : null;
 
@@ -71,10 +71,20 @@ from(bucket: "${influxConfig.bucket}")
   |> range(start: ${fluxRange})
   |> filter(fn: (r) => r["_measurement"] == "emotion_history")
   |> filter(fn: (r) => r["patientId"] == "${escapedPatientId}")
-  |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
+  |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value") 
   |> keep(columns: ["_time", "anger", "contempt", "disgust", "fear", "happiness", "sadness", "surprise", "distressScore", "painScore"])
   |> sort(columns: ["_time"])
 `;
+// pivot -> transform from long format (one row per field) to wide format (one row per timestamp with all fields as columns), then we can easily map to our InfluxEmotionPoint type in the code below
+
+  // e.g. for Record<string, unknown>
+// {
+//   "_time": "2026-04-15T12:00:00Z", // string "_time"
+//   "anger": 0.15,                   // string "anger"
+//   "happiness": 0.85,               // string "happiness"
+//   "distressScore": 2,              // string "distressScore"
+//   ...
+// }
 
   try {
     const rows = await queryApi.collectRows<Record<string, unknown>>(query);
@@ -107,8 +117,8 @@ export async function writePatientEmotionPoint(
   }
 
   try {
-    const point = new Point('emotion_history')
-      .tag('patientId', patientId)
+    const point = new Point('emotion_history') // measurement name
+      .tag('patientId', patientId) // tag for filtering by patientId in queries
       .floatField('anger', reading.anger)
       .floatField('contempt', reading.contempt)
       .floatField('disgust', reading.disgust)

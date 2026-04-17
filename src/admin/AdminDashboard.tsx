@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { backendPaths } from '../config/backend';
 import { useAuth } from '../hooks/useAuth';
 import { AdminPatient, WardBedStatus, WardStatus } from '../types/hospital';
 
@@ -57,8 +58,8 @@ export const AdminDashboard = () => {
     setError(null);
     try {
       const [wardData, patientData] = await Promise.all([
-        requestJson<WardResponse>('/api/admin/wards'),
-        requestJson<PatientsResponse>('/api/admin/patients/active'),
+        requestJson<WardResponse>(backendPaths.admin.wards),
+        requestJson<PatientsResponse>(backendPaths.admin.activePatients),
       ]);
 
       setWards(wardData.wards);
@@ -120,7 +121,7 @@ export const AdminDashboard = () => {
     setError(null);
 
     try {
-      await requestJson<{ patient: AdminPatient }>('/api/admin/check-in', {
+      await requestJson<{ patient: AdminPatient }>(backendPaths.admin.checkIn, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -156,7 +157,7 @@ export const AdminDashboard = () => {
     setCheckingOutId(patientId);
     setError(null);
     try {
-      await requestJson<{ patient: AdminPatient }>(`/api/admin/check-out/${patientId}`, {
+      await requestJson<{ patient: AdminPatient }>(backendPaths.admin.checkOut(patientId), {
         method: 'POST',
       });
       await refreshData();

@@ -14,6 +14,7 @@ export const requireAuth = (req: Request, res: Response, next: NextFunction) => 
   const auth = req.headers.authorization;
   if (!auth) return res.status(401).json({ error: 'Missing authorization header' });
 
+  // should be: Bearer <token>
   const parts = auth.split(' ');
   if (parts.length !== 2 || parts[0] !== 'Bearer') return res.status(401).json({ error: 'Invalid authorization format' });
 
@@ -27,6 +28,7 @@ export const requireAuth = (req: Request, res: Response, next: NextFunction) => 
   }
 };
 
+// closure - the inner function has access to allowedRoles parameter
 export const requireRole = (...allowedRoles: UserRole[]) => {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {

@@ -9,7 +9,7 @@ export const Login = () => {
   const { login } = useAuth();
 
   const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
+    e.preventDefault(); // helps with the "Enter" key submission and prevents page reload
     setLoading(true);
     setError(null);
     try {

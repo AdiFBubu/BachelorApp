@@ -2,8 +2,6 @@ import { Brain, Zap, Shield, TrendingUp } from 'lucide-react';
 
 interface DashboardHeaderProps {
   clinicalStatus: 'normal' | 'high-risk' | 'positive';
-  showBaseline: boolean;
-  onToggleBaseline: () => void;
   showLiveMonitor: boolean;
   onToggleLiveMonitor: () => void;
   showClinicalInsights: boolean;
@@ -15,8 +13,6 @@ interface DashboardHeaderProps {
 
 export const DashboardHeader = ({
   clinicalStatus,
-  showBaseline,
-  onToggleBaseline,
   showLiveMonitor,
   onToggleLiveMonitor,
   showClinicalInsights,
@@ -73,16 +69,6 @@ export const DashboardHeader = ({
         </div>
 
         <div className="flex items-center space-x-3">
-          <button
-            onClick={onToggleBaseline}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-              showBaseline
-                ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/30'
-                : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-            }`}
-          >
-            {showBaseline ? 'Viewing Baseline' : 'Show Baseline'}
-          </button>
 
           <button
             onClick={onToggleLiveMonitor}
@@ -102,10 +88,10 @@ export const DashboardHeader = ({
             Insights
           </button>
 
-          <div className="flex items-center space-x-2 px-4 py-2 bg-slate-800 rounded-lg">
+          {/* <div className="flex items-center space-x-2 px-4 py-2 bg-slate-800 rounded-lg">
             <Zap className="w-4 h-4 text-teal-400" />
             <span className="text-sm text-slate-300">CSNN Active</span>
-          </div>
+          </div> */}
 
           <button
             onClick={onTogglePanel}

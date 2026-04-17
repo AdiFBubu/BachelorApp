@@ -25,6 +25,7 @@ export interface ClinicalEvent {
   message: string;
 }
 
+// Baseline emotion levels to show when no data is available
 const BASELINE_EMOTIONS: EmotionData = {
   Anger: 5,
   Contempt: 3,
@@ -67,10 +68,10 @@ export const useEmotionData = () => {
       time: timeString,
       emotion,
       intensity,
-      message: messages[emotion][Math.floor(Math.random() * messages[emotion].length)],
+      message: messages[emotion][Math.floor(Math.random() * messages[emotion].length)], // Randomize message for variety
     };
 
-    setClinicalEvents(prev => [event, ...prev].slice(0, 20));
+    setClinicalEvents(prev => [event, ...prev].slice(0, 20)); // keep only latest 20 events
   }, []);
 
   const mapProbsToEmotionData = (probs: Record<string, number>): EmotionData => {
@@ -108,8 +109,8 @@ export const useEmotionData = () => {
     
     // Map and update emotions atomically
     const mapped = mapProbsToEmotionData(probs);
-    setCurrentEmotions(mapped);
-    latestEmotionsRef.current = mapped;
+    setCurrentEmotions(mapped); // so that UI updates with new emotions
+    latestEmotionsRef.current = mapped; // keep ref in sync for history and event detection
 
     // Detect strong spike and add clinical event
     const entries = Object.entries(mapped) as [EmotionType, number][];
@@ -117,21 +118,18 @@ export const useEmotionData = () => {
       const max = entries.reduce((acc, cur) => (cur[1] > acc[1] ? cur : acc), entries[0]);
       if (max && max[1] > 60) {
         setSpikeFlash(max[0]);
-        setTimeout(() => setSpikeFlash(null), 300);
+        setTimeout(() => setSpikeFlash(null), 5000);
         addClinicalEvent(max[0], max[1]);
       }
     }
   }, [addClinicalEvent]);
 
   useEffect(() => {
-    // No random data generation - only use real model probabilities
-    // When no external probabilities are present, stay at baseline
-  }, []);
-
-  useEffect(() => {
     latestEmotionsRef.current = currentEmotions;
   }, [currentEmotions]);
 
+
+  // emotionHistory helps seeing the constant line in the graphs until a new emotion snapshot arrives
   useEffect(() => {
     const historyInterval = window.setInterval(() => {
       setEmotionHistory(prev => {
@@ -139,7 +137,7 @@ export const useEmotionData = () => {
           ...latestEmotionsRef.current,
           timestamp: Date.now(),
         };
-        return [...prev, newSnapshot].slice(-MAX_HISTORY_POINTS);
+        return [...prev, newSnapshot].slice(-MAX_HISTORY_POINTS); // last N points based on retention policy
       });
     }, HISTORY_SAMPLE_INTERVAL_MS);
 

@@ -34,7 +34,8 @@ export interface PatientAlertNotification {
 
 export interface MonitoringSnapshot {
   timeline: EmotionTimelinePoint[];
-  alerts: PatientAlertNotification[];
+  currentAlerts: PatientAlertNotification[];
+  prolongedAlerts: PatientAlertNotification[];
   source: TimelineSource;
   influxConfigured: boolean;
 }
@@ -147,9 +148,9 @@ function getSeverity(score: number): AlertSeverity {
 
 function deriveProlongedAlert(
   timeline: EmotionTimelinePoint[],
-  type: AlertType,
+  type: AlertType, // what do we want to alert on, either 'DISTRESS' or 'PAIN'
   threshold: number,
-  valueSelector: (point: EmotionTimelinePoint) => number,
+  valueSelector: (point: EmotionTimelinePoint) => number, // how to get the relevant score from a timeline point, either point.distressScore or point.painScore
 ): PatientAlertNotification[] {
   if (timeline.length === 0) {
     return [];
@@ -157,8 +158,9 @@ function deriveProlongedAlert(
 
   const alerts: PatientAlertNotification[] = [];
   let streakStart = -1;
-  let streakPeak = 0;
+  let streakPeak = 0; // track the peak score during the streak to determine severity, since a longer but milder streak might be less concerning than a shorter but more intense one
 
+  // decides if a prolonged streak has ended and if it meets criteria to generate an alert, then resets streak tracking
   const flushStreak = (endIndex: number) => {
     if (streakStart < 0) return;
 
@@ -166,7 +168,7 @@ function deriveProlongedAlert(
     const endPoint = timeline[endIndex];
     const durationMinutes = differenceInMinutes(new Date(endPoint.timestamp), new Date(startPoint.timestamp));
 
-    if (durationMinutes >= PROLONGED_MINUTES) {
+    if (durationMinutes >= PROLONGED_MINUTES) { // only if the streak lasted long enough to be concerning
       const severity = getSeverity(streakPeak);
       const scoreLabel = type === 'DISTRESS' ? 'distress' : 'pain';
       alerts.push({
@@ -205,6 +207,8 @@ export async function getMonitoringSnapshot(
   window: TimelineWindow,
 ): Promise<MonitoringSnapshot> {
   const { timeline, source } = await getTimeline(patientId, window);
+
+  // manual alerts sent by doctors, previously detected alerts by another process etc.
   const persistedAlerts = await prisma.patientAlert.findMany({
     where: {
       patientId,
@@ -217,7 +221,9 @@ export async function getMonitoringSnapshot(
   const derivedAlerts = [
     ...deriveProlongedAlert(timeline, 'DISTRESS', DISTRESS_THRESHOLD, (point) => point.distressScore),
     ...deriveProlongedAlert(timeline, 'PAIN', PAIN_THRESHOLD, (point) => point.painScore),
-  ];
+  ].sort((a, b) => {
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(); // descending by createdAt
+  });
 
   const dbAlerts: PatientAlertNotification[] = persistedAlerts.map((alert) => ({
     id: alert.id,
@@ -228,13 +234,10 @@ export async function getMonitoringSnapshot(
     source: 'db',
   }));
 
-  const alerts = [...dbAlerts, ...derivedAlerts].sort((a, b) => {
-    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-  });
-
   return {
     timeline,
-    alerts,
+    currentAlerts: dbAlerts,
+    prolongedAlerts: derivedAlerts,
     source,
     influxConfigured: isInfluxConfigured(),
   };
