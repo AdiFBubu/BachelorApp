@@ -346,23 +346,28 @@ export const LiveSpikeMonitor = ({ emotionHistory }: LiveSpikeMonitorProps) => {
           <Activity className="w-5 h-5 text-teal-400" />
           <h3 className="text-white font-semibold">Live Spike Monitor</h3>
         </div>
-        <div className="flex items-center space-x-2">
-          <div
-            className={`w-2 h-2 rounded-full ${
-              isLiveStreaming ? 'bg-teal-400 animate-pulse' : 'bg-amber-400'
+        <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-2 rounded-full border border-slate-700/70 bg-slate-900/80 px-3 py-1">
+            <div
+              className={`w-2 h-2 rounded-full ${
+                isLiveStreaming ? 'bg-teal-400 animate-pulse' : 'bg-amber-400'
+              }`}
+            ></div>
+            <span className={`text-sm ${isLiveStreaming ? 'text-teal-400' : 'text-amber-300'}`}>
+              {isLiveStreaming ? 'Streaming' : 'Paused for analysis'}
+            </span>
+          </div>
+
+          <button
+            onClick={toggleLiveUpdates}
+            className={`rounded-md px-3 py-1.5 text-xs font-medium text-white transition-colors ${
+              isLiveStreaming
+                ? 'bg-amber-500 hover:bg-amber-400'
+                : 'bg-teal-500 hover:bg-teal-400'
             }`}
-          ></div>
-          <span className={`text-sm ${isLiveStreaming ? 'text-teal-400' : 'text-amber-300'}`}>
-            {isLiveStreaming ? 'Streaming' : 'Paused for analysis'}
-          </span>
-          {!isLiveStreaming && (
-            <button
-              onClick={resumeLiveUpdates}
-              className="rounded px-2.5 py-1 text-xs bg-teal-500 text-white hover:bg-teal-400"
-            >
-              Resume live
-            </button>
-          )}
+          >
+            {isLiveStreaming ? 'Pause for analysis' : 'Resume live updates'}
+          </button>
         </div>
       </div>
 
@@ -411,16 +416,6 @@ export const LiveSpikeMonitor = ({ emotionHistory }: LiveSpikeMonitorProps) => {
           >
             Reset zoom
           </button>
-          <button
-            onClick={toggleLiveUpdates}
-            className={`rounded px-2.5 py-1 text-xs text-white transition-colors ${
-              isLiveStreaming
-                ? 'bg-amber-500 hover:bg-amber-400'
-                : 'bg-teal-500 hover:bg-teal-400'
-            }`}
-          >
-            {isLiveStreaming ? 'Pause for analysis' : 'Resume live updates'}
-          </button>
           <span className="text-xs text-slate-400">
             {visiblePointCount} / {chartData.length} points shown
             {chartData.length > overviewChartData.length ? ' (adaptive sampling)' : ''}
@@ -456,7 +451,7 @@ export const LiveSpikeMonitor = ({ emotionHistory }: LiveSpikeMonitorProps) => {
         </div>
       </div>
 
-      <div className="flex-1 min-h-0">
+      <div className="flex-1 min-h-0 live-monitor-chart">
         {chartData.length === 0 ? (
           <div className="h-full min-h-[240px] rounded-lg border border-slate-800 bg-slate-950/40 flex items-center justify-center text-slate-500 text-sm">
             No data points yet for this interval.
@@ -514,13 +509,16 @@ export const LiveSpikeMonitor = ({ emotionHistory }: LiveSpikeMonitorProps) => {
                 />
               ))}
               <Brush
+                className="live-monitor-brush"
                 dataKey="timestamp"
                 startIndex={brushStartIndex}
                 endIndex={brushEndIndex}
                 onChange={handleBrushChange}
-                stroke="#14b8a6"
-                height={26}
-                travellerWidth={10}
+                stroke="#22d3ee"
+                fill="rgba(15, 23, 42, 0.78)"
+                height={34}
+                travellerWidth={14}
+                gap={6}
                 tickFormatter={formatTick}
               />
             </LineChart>

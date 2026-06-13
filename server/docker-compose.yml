@@ -1,0 +1,15 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: neuro_guardian_db
+    restart: always
+    environment:
+      POSTGRES_PASSWORD: parola123!A
+      POSTGRES_DB: neuro_guardian
+    ports:
+      - "3491:5432" # Mapam portul 5432 din container la 3491 în Linux
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:

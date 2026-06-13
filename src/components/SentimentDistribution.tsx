@@ -30,7 +30,7 @@ export const SentimentDistribution = ({ emotions, spikeFlash }: SentimentDistrib
   const emotionEntries = Object.entries(emotions) as [EmotionType, number][];
 
   return (
-    <div className="bg-slate-900/50 rounded-lg p-6 border border-slate-800">
+    <div className="bg-slate-900/50 rounded-lg px-6 py-8 border border-slate-800">
       <div className="flex items-center space-x-2 mb-6">
         <BarChart3 className="w-5 h-5 text-teal-400" />
         <h3 className="text-white font-semibold">Sentiment Distribution</h3>

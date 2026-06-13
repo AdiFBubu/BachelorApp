@@ -1,4 +1,5 @@
 import { Brain, Zap, Shield, TrendingUp } from 'lucide-react';
+import { InferenceModel, inferenceModelLabels } from '../types/inference';
 
 interface DashboardHeaderProps {
   clinicalStatus: 'normal' | 'high-risk' | 'positive';
@@ -6,6 +7,8 @@ interface DashboardHeaderProps {
   onToggleLiveMonitor: () => void;
   showClinicalInsights: boolean;
   onToggleClinicalInsights: () => void;
+  modelType: InferenceModel;
+  onModelChange: (model: InferenceModel) => void;
   panelOpen: boolean;
   onTogglePanel: () => void;
   onLogout: () => void;
@@ -17,6 +20,8 @@ export const DashboardHeader = ({
   onToggleLiveMonitor,
   showClinicalInsights,
   onToggleClinicalInsights,
+  modelType,
+  onModelChange,
   panelOpen,
   onTogglePanel,
   onLogout,
@@ -47,6 +52,7 @@ export const DashboardHeader = ({
 
   const config = statusConfig[clinicalStatus];
   const Icon = config.icon;
+  const modelOptions: InferenceModel[] = ['ann', 'csnn'];
 
   return (
     <div className="bg-slate-900/50 border-b border-slate-800 p-4">
@@ -87,6 +93,27 @@ export const DashboardHeader = ({
           >
             Insights
           </button>
+
+          {/* <div className="flex items-center space-x-1 rounded-lg bg-slate-800/80 p-1">
+            <span className="px-2 text-[10px] uppercase tracking-wide text-slate-400">Model</span>
+            {modelOptions.map((option) => {
+              const active = option === modelType;
+              return (
+                <button
+                  key={option}
+                  onClick={() => onModelChange(option)}
+                  aria-pressed={active}
+                  className={`px-2 py-1 rounded-md text-xs font-semibold transition-all ${
+                    active
+                      ? 'bg-teal-500 text-white shadow'
+                      : 'text-slate-300 hover:bg-slate-700'
+                  }`}
+                >
+                  {inferenceModelLabels[option]}
+                </button>
+              );
+            })}
+          </div> */}
 
           {/* <div className="flex items-center space-x-2 px-4 py-2 bg-slate-800 rounded-lg">
             <Zap className="w-4 h-4 text-teal-400" />

@@ -12,6 +12,7 @@ import {
   DoctorPatientDetailPayload,
   DoctorPatientSummary,
 } from '../types/hospital';
+import { InferenceModel } from '../types/inference';
 
 type PatientsResponse = {
   patients: DoctorPatientSummary[];
@@ -58,9 +59,10 @@ export const DoctorDashboard = () => {
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [busyPatientId, setBusyPatientId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [showLiveMonitor, setShowLiveMonitor] = useState(true);
-  const [showClinicalInsights, setShowClinicalInsights] = useState(true);
+  const [showLiveMonitor, setShowLiveMonitor] = useState(false);
+  const [showClinicalInsights, setShowClinicalInsights] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [inferenceModel, setInferenceModel] = useState<InferenceModel>('ann');
   const [riskNotification, setRiskNotification] = useState<RiskNotification | null>(null);
   const lastReadingPushAtRef = useRef(0);
   const previousRiskLevelRef = useRef<RiskLevel | null>(null);
@@ -139,6 +141,14 @@ export const DoctorDashboard = () => {
 
     void loadPatientDetail(selectedPatientId, 'initial');
   }, [selectedPatientId, loadPatientDetail]);
+
+  useEffect(() => {
+    // Prevent dead-end state: when no patient is selected, keep panel open so
+    // user can refresh lists, take patients, or logout.
+    if (!selectedPatientId && !panelOpen) {
+      setPanelOpen(true);
+    }
+  }, [selectedPatientId, panelOpen]);
 
   // useEffect(() => {
   //   if (!selectedPatientId) {
@@ -251,10 +261,10 @@ export const DoctorDashboard = () => {
 
     const hasCriticalAlert = allAlerts.some((alert) => alert.severity === 'HIGH');
 
-    if (hasCriticalAlert || (currentEmotions.Anger > 60 && currentEmotions.Fear > 60)) {
+    if (hasCriticalAlert || (currentEmotions.Anger > 60 || currentEmotions.Fear > 60)) {
       return 'high-risk';
     }
-    if (currentEmotions.Happiness > 50 && currentEmotions.Surprise > 30) {
+    if (currentEmotions.Happiness > 50 || currentEmotions.Surprise > 30) {
       return 'positive';
     }
     return 'normal';
@@ -305,7 +315,7 @@ export const DoctorDashboard = () => {
         }
         return null;
       });
-    }, 4500);
+    }, 5000);
 
     return () => window.clearTimeout(timeout);
   }, [riskNotification]);
@@ -346,6 +356,14 @@ export const DoctorDashboard = () => {
               >
                 Refresh patients
               </button>
+              {!selectedPatient && (
+                <button
+                  onClick={logout}
+                  className="w-full rounded bg-red-600 px-3 py-2 text-sm text-white hover:bg-red-500"
+                >
+                  Logout
+                </button>
+              )}
               {error && <div className="text-xs text-red-400">{error}</div>}
             </div>
           </div>
@@ -426,13 +444,16 @@ export const DoctorDashboard = () => {
               onToggleLiveMonitor={() => setShowLiveMonitor(!showLiveMonitor)}
               showClinicalInsights={showClinicalInsights}
               onToggleClinicalInsights={() => setShowClinicalInsights(!showClinicalInsights)}
+              modelType={inferenceModel}
+              onModelChange={setInferenceModel}
               panelOpen={panelOpen}
               onTogglePanel={() => setPanelOpen(!panelOpen)}
               onLogout={logout}
             />
 
             <div className="flex flex-1 overflow-hidden">
-              <div className="w-72 overflow-y-auto">
+              <div className="w-80 shrink-0 overflow-y-auto">
+
                 <PatientSidebar riskLevel={riskLevel} patient={selectedPatient} />
               </div>
 
@@ -445,6 +466,7 @@ export const DoctorDashboard = () => {
                       <CameraStreamer
                         isLive={true}
                         spikeFlash={spikeFlash}
+                        modelType={inferenceModel}
                         onProbabilities={handleProbabilities}
                       />
                     </div>

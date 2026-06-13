@@ -1,0 +1,122 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  DOCTOR
+  ADMIN
+}
+
+enum CameraStatus {
+  ONLINE
+  OFFLINE
+  MAINTENANCE
+}
+
+enum AlertType {
+  DISTRESS
+  PAIN
+}
+
+enum AlertSeverity {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  role         UserRole @default(DOCTOR)
+  createdAt    DateTime @default(now())
+  refreshTokens RefreshToken[]
+  assignedPatients Patient[] @relation("DoctorPatients")
+}
+
+model RefreshToken {
+  id         String   @id @default(cuid())
+  token      String   @unique
+  user       User     @relation(fields: [userId], references: [id])
+  userId     String
+  createdAt  DateTime @default(now())
+  expiresAt  DateTime
+}
+
+model Ward {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  createdAt DateTime  @default(now())
+  beds      Bed[]
+  patients  Patient[]
+}
+
+model Bed {
+  id           String       @id @default(cuid())
+  ward         Ward         @relation(fields: [wardId], references: [id], onDelete: Cascade)
+  wardId       String
+  label        String
+  cameraStatus CameraStatus @default(ONLINE)
+  isOccupied   Boolean      @default(false)
+  createdAt    DateTime     @default(now())
+  patients     Patient[]
+
+  @@unique([wardId, label])
+}
+
+model Patient {
+  id            String          @id @default(cuid())
+  firstName     String
+  lastName      String
+  nationalId    String          @unique
+  medicalHistory String?
+  diagnosis     String?
+  checkedInAt   DateTime        @default(now())
+  checkedOutAt  DateTime?
+  isArchived    Boolean         @default(false)
+  doctor        User?           @relation("DoctorPatients", fields: [doctorId], references: [id], onDelete: SetNull)
+  doctorId      String?
+  ward          Ward            @relation(fields: [wardId], references: [id])
+  wardId        String
+  bed           Bed             @relation(fields: [bedId], references: [id])
+  bedId         String
+  emotionReadings EmotionReading[]
+  alerts        PatientAlert[]
+}
+
+model EmotionReading {
+  id           String   @id @default(cuid())
+  patient      Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  patientId    String
+  timestamp    DateTime @default(now())
+  anger        Float
+  contempt     Float
+  disgust      Float
+  fear         Float
+  happiness    Float
+  sadness      Float
+  surprise     Float
+  distressScore Float   @default(0)
+  painScore    Float    @default(0)
+
+  @@index([patientId, timestamp])
+}
+
+model PatientAlert {
+  id         String        @id @default(cuid())
+  patient    Patient       @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  patientId  String
+  type       AlertType
+  severity   AlertSeverity
+  message    String
+  active     Boolean       @default(true)
+  createdAt  DateTime      @default(now())
+  resolvedAt DateTime?
+
+  @@index([patientId, active])
+}

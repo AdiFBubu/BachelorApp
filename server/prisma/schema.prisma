@@ -53,7 +53,6 @@ model Ward {
   name      String    @unique
   createdAt DateTime  @default(now())
   beds      Bed[]
-  patients  Patient[]
 }
 
 model Bed {
@@ -81,9 +80,7 @@ model Patient {
   isArchived    Boolean         @default(false)
   doctor        User?           @relation("DoctorPatients", fields: [doctorId], references: [id], onDelete: SetNull)
   doctorId      String?
-  ward          Ward            @relation(fields: [wardId], references: [id])
-  wardId        String
-  bed           Bed             @relation(fields: [bedId], references: [id])
+  bed           Bed            @relation(fields: [bedId], references: [id])
   bedId         String
   emotionReadings EmotionReading[]
   alerts        PatientAlert[]

@@ -47,6 +47,7 @@ export const checkOutPatient = async (req: Request, res: Response) => {
     const patient = await checkOutPatientService(req.params.patientId);
     return res.json({ patient });
   } catch (err) {
+    console.error(err);
     return handleServiceError(res, err, 'Unable to complete check-out');
   }
 };

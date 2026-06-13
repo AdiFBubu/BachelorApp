@@ -1,31 +1,36 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { BACKEND_WS_URL } from '../config/backend';
 import { EmotionType } from '../hooks/useEmotionData';
 import WebSocketClient from '../lib/websocketClient';
+import { InferenceModel, inferenceModelLabels, inferenceModelToBackend } from '../types/inference';
 
 interface CameraStreamerProps {
   isLive: boolean;
   spikeFlash: EmotionType | null;
+  modelType: InferenceModel;
   onProbabilities?: (probs: Record<string, number>) => void;
 }
 
-export const CameraStreamer = ({ isLive, spikeFlash, onProbabilities }: CameraStreamerProps) => {
+export const CameraStreamer = ({ isLive, spikeFlash, modelType, onProbabilities }: CameraStreamerProps) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wsClientRef = useRef<WebSocketClient | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const startRequestIdRef = useRef(0);
   const [streaming, setStreaming] = useState(false);
   const [recording, setRecording] = useState(false);
   const [connected, setConnected] = useState(false);
-  const [lastResp, setLastResp] = useState<unknown>(null);
+  const [, setLastResp] = useState<unknown>(null);
   const cycleTimerRef = useRef<number | null>(null);
   const captureAbortRef = useRef<boolean>(false);
+  const lastModelSentRef = useRef<InferenceModel | null>(null);
 
-  const TARGET_W = 48; // model input width
-  const TARGET_H = 48; // model input height
-  const QUALITY = 0.75; // JPEG quality
+  const TARGET_W = 224; // model input width
+  const TARGET_H = 224; // model input height
+  const QUALITY = 1.0; // JPEG quality
   const BATCH_SIZE = 10;
   const BATCH_INTERVAL_MS = 300; // 10 frames in ~3s
-  const PAUSE_MS = 10000; // 10s pause
+  const PAUSE_MS = 5000; // 5s pause
   const WS_URL = BACKEND_WS_URL;
 
   useEffect(() => {
@@ -47,6 +52,17 @@ export const CameraStreamer = ({ isLive, spikeFlash, onProbabilities }: CameraSt
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLive]);
 
+  const sendModelSelection = useCallback((selected: InferenceModel) => {
+    const client = wsClientRef.current;
+    if (!client || !client.isOpen()) return false;
+    const payload = { type: 'switch_model', model: inferenceModelToBackend[selected] };
+    const ok = client.send(JSON.stringify(payload));
+    if (ok) {
+      lastModelSentRef.current = selected;
+    }
+    return ok;
+  }, []);
+
   function connectWs() {
     if (wsClientRef.current && wsClientRef.current.isOpen()) return;
     try {
@@ -54,14 +70,17 @@ export const CameraStreamer = ({ isLive, spikeFlash, onProbabilities }: CameraSt
 
       client.onOpen = () => {
         setConnected(true);
+        sendModelSelection(modelType);
       };
 
       client.onClose = () => {
         setConnected(false);
+        lastModelSentRef.current = null;
       };
 
       client.onError = () => {
         setConnected(false);
+        lastModelSentRef.current = null;
       };
 
       client.onParsedMessage = (parsed) => {
@@ -123,13 +142,28 @@ export const CameraStreamer = ({ isLive, spikeFlash, onProbabilities }: CameraSt
       wsClientRef.current = null;
     }
     setConnected(false);
+    lastModelSentRef.current = null;
   }
 
   async function startStreaming() {
     if (streaming) return;
+    const requestId = ++startRequestIdRef.current;
+    captureAbortRef.current = false;
     try {
       connectWs();
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false }); // request camera access
+      if (requestId !== startRequestIdRef.current || captureAbortRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+      if (!videoRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+      }
+      mediaStreamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
@@ -145,9 +179,6 @@ export const CameraStreamer = ({ isLive, spikeFlash, onProbabilities }: CameraSt
 
       setStreaming(true);
 
-      // reset abort flag and start periodic recording cycle
-      captureAbortRef.current = false;
-
       // start first cycle immediately
       runCycle();
     } catch (err) {
@@ -156,6 +187,7 @@ export const CameraStreamer = ({ isLive, spikeFlash, onProbabilities }: CameraSt
   }
 
   function stopStreaming() {
+    startRequestIdRef.current += 1;
     setStreaming(false);
     setRecording(false);
     // stop any ongoing cycle or capture
@@ -164,9 +196,12 @@ export const CameraStreamer = ({ isLive, spikeFlash, onProbabilities }: CameraSt
       clearTimeout(cycleTimerRef.current);
       cycleTimerRef.current = null;
     }
-    if (videoRef.current && videoRef.current.srcObject) {
-      const tracks = (videoRef.current.srcObject as MediaStream).getTracks();
-      tracks.forEach((t) => t.stop());
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+      mediaStreamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.pause();
       videoRef.current.srcObject = null;
     }
     disconnectWs();
@@ -186,7 +221,10 @@ export const CameraStreamer = ({ isLive, spikeFlash, onProbabilities }: CameraSt
       if (!ctx) return resolve(null);
 
       // this makes a "photo" of the current video frame at the desired resolution (TARGET_W x TARGET_H)
-      ctx.drawImage(v, 0, 0, c.width, c.height);
+      const minDim = Math.min(v.videoWidth, v.videoHeight);
+      const sx = (v.videoWidth - minDim) / 2;
+      const sy = (v.videoHeight - minDim) / 2;
+      ctx.drawImage(v, sx, sy, minDim, minDim, 0, 0, c.width, c.height);
 
       // get JPEG blob (compressed file) and convert to ArrayBuffer (raw binary)
       c.toBlob(async (blob) => {
@@ -235,16 +273,23 @@ export const CameraStreamer = ({ isLive, spikeFlash, onProbabilities }: CameraSt
     }
   }
 
+  useEffect(() => {
+    if (!connected) return;
+    if (lastModelSentRef.current === modelType) return;
+    sendModelSelection(modelType);
+  }, [connected, modelType, sendModelSelection]);
+
   return (
-    <div className="relative bg-slate-900 rounded-lg aspect-video flex flex-col">
+    <div className="relative bg-slate-900 h-full rounded-lg aspect-video flex flex-col">
       <div className="p-3 flex items-start justify-between">
         <div>
           <div className="text-slate-300 font-medium">Live Camera</div>
-          <div className="text-slate-500 text-xs">Streaming to model via WebSocket</div>
+          {/* <div className="text-slate-500 text-xs">Streaming to model via WebSocket</div> */}
           <div className="text-slate-500 text-xs mt-1">
             {isLive ? 'Session Live' : 'Session Paused'}
             {spikeFlash ? ` • Spike: ${spikeFlash}` : ''}
           </div>
+          <div className="text-slate-500 text-xs">Model: {inferenceModelLabels[modelType]}</div>
         </div>
 
         <div className="flex items-center space-x-3">
@@ -267,18 +312,28 @@ export const CameraStreamer = ({ isLive, spikeFlash, onProbabilities }: CameraSt
 
       <div className="flex-1 flex items-center justify-center">
         <div className="relative">
+          {/* <img 
+            src="src/components/user-photo.png" 
+            alt="Default User"
+            className="w-[320px] h-[240px] object-cover rounded-md border border-slate-700" 
+          /> */}
           <video ref={videoRef} className="w-[320px] h-[240px] object-cover rounded-md" muted playsInline />
-          <div className="absolute bottom-2 left-2 bg-black/40 px-2 py-1 rounded text-xs text-white">
-            {connected ? 'Model connected' : 'Model disconnected'}
-          </div>
         </div>
 
-        <div className="ml-4 text-sm text-slate-300">
+        {/* <div className="ml-4 text-sm text-slate-300">
           <pre className="whitespace-pre-wrap max-w-xs">{JSON.stringify(lastResp, null, 2)}</pre>
-        </div>
+        </div> */}
       </div>
 
-      <div className="p-3 text-xs text-slate-400">Resolution sent: {TARGET_W}x{TARGET_H} • Quality {QUALITY}</div>
+      <div className="flex justify-between items-center w-full p-3">
+        <div className="text-xs text-slate-400">
+          Resolution sent: {TARGET_W}x{TARGET_H} • Quality {QUALITY}
+        </div>
+
+        <div className="bg-black/40 px-2 py-1 rounded text-xs text-white">
+          {connected ? `Model connected (${inferenceModelLabels[modelType]})` : 'Model disconnected'}
+        </div>
+      </div>
     </div>
   );
 };

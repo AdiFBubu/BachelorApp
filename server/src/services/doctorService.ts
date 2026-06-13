@@ -15,8 +15,7 @@ type PatientWithRelations = {
   diagnosis: string | null;
   medicalHistory: string | null;
   checkedInAt: Date;
-  ward: { id: string; name: string };
-  bed: { id: string; label: string; cameraStatus: string; isOccupied: boolean };
+  bed: { id: string; label: string; cameraStatus: string; isOccupied: boolean; ward?: { id: string; name: string } } | null;
   doctorId: string | null;
 };
 
@@ -101,7 +100,7 @@ const serializePatient = (patient: PatientWithRelations) => ({
   diagnosis: patient.diagnosis,
   medicalHistory: patient.medicalHistory,
   checkedInAt: patient.checkedInAt,
-  ward: patient.ward,
+  ward: patient.bed ? patient.bed.ward : null,
   bed: patient.bed,
   doctorId: patient.doctorId,
 });
@@ -115,8 +114,7 @@ export async function getAvailablePatientsService() {
       doctorId: null,
     },
     include: {
-      ward: { select: { id: true, name: true } },
-      bed: { select: { id: true, label: true, cameraStatus: true, isOccupied: true } },
+      bed: { include: { ward: { select: { id: true, name: true } } } },
     },
     orderBy: { checkedInAt: 'desc' },
   });
@@ -133,8 +131,7 @@ export async function getMyPatientsService(doctorIdInput: string | undefined) {
       doctorId,
     },
     include: {
-      ward: { select: { id: true, name: true } },
-      bed: { select: { id: true, label: true, cameraStatus: true, isOccupied: true } },
+      bed: { include: { ward: { select: { id: true, name: true } } } },
     },
     orderBy: { checkedInAt: 'desc' },
   });
@@ -175,8 +172,7 @@ export async function takePatientService(doctorIdInput: string | undefined, pati
   const patient = await prisma.patient.findUnique({
     where: { id: patientId },
     include: {
-      ward: { select: { id: true, name: true } },
-      bed: { select: { id: true, label: true, cameraStatus: true, isOccupied: true } },
+      bed: { include: { ward: { select: { id: true, name: true } } } },
     },
   });
 
@@ -198,8 +194,7 @@ export async function getPatientDetailService(
   const patient = await prisma.patient.findUnique({
     where: { id: patientId },
     include: {
-      ward: { select: { id: true, name: true } },
-      bed: { select: { id: true, label: true, cameraStatus: true, isOccupied: true } },
+      bed: { select: { id: true, label: true, cameraStatus: true, isOccupied: true, ward: { select: { id: true, name: true } } } },
     },
   });
 

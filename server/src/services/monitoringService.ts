@@ -146,7 +146,7 @@ function getSeverity(score: number): AlertSeverity {
   return 'LOW';
 }
 
-function deriveProlongedAlert(
+export function deriveProlongedAlert(
   timeline: EmotionTimelinePoint[],
   type: AlertType, // what do we want to alert on, either 'DISTRESS' or 'PAIN'
   threshold: number,

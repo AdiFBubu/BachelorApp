@@ -7,7 +7,6 @@ type CheckInPayload = {
   nationalId?: string;
   diagnosis?: string;
   medicalHistory?: string;
-  wardId?: string;
   bedId?: string;
 };
 
@@ -20,8 +19,7 @@ type PatientWithRelations = {
   medicalHistory: string | null;
   checkedInAt: Date;
   checkedOutAt: Date | null;
-  ward: { id: string; name: string };
-  bed: { id: string; label: string; cameraStatus: string; isOccupied: boolean };
+  bed: { id: string; label: string; cameraStatus: string; isOccupied: boolean; ward?: { id: string; name: string } } | null;
   doctor: { id: string; email: string } | null;
 };
 
@@ -76,7 +74,7 @@ const formatPatient = (patient: PatientWithRelations) => ({
   medicalHistory: patient.medicalHistory,
   checkedInAt: patient.checkedInAt,
   checkedOutAt: patient.checkedOutAt,
-  ward: patient.ward,
+  ward: patient.bed ? patient.bed.ward : null,
   bed: patient.bed,
   doctor: patient.doctor,
 });
@@ -129,8 +127,7 @@ export async function getActivePatientsService() {
   const patients = await prisma.patient.findMany({
     where: { isArchived: false },
     include: {
-      ward: { select: { id: true, name: true } },
-      bed: { select: { id: true, label: true, cameraStatus: true, isOccupied: true } },
+      bed: { select: { id: true, label: true, cameraStatus: true, isOccupied: true, ward: { select: { id: true, name: true } } } },
       doctor: { select: { id: true, email: true } },
     },
     orderBy: { checkedInAt: 'desc' },
@@ -149,35 +146,33 @@ export async function checkInPatientService(rawBody: unknown) {
     nationalId,
     diagnosis,
     medicalHistory,
-    wardId,
     bedId,
   } = body;
 
-  if (!firstName || !lastName || !nationalId || !bedId) {
+  if (!firstName || !lastName || !nationalId) {
     throw new AdminServiceError(
       400,
-      'Missing required check-in fields: firstName, lastName, nationalId, bedId',
+      'Missing required check-in fields: firstName, lastName, nationalId',
       'CHECKIN_FAILED',
     );
   }
 
   try {
     const patient = await prisma.$transaction(async (tx) => {
-      const bed = await tx.bed.findUnique({
-        where: { id: bedId },
-        include: { ward: { select: { id: true, name: true } } },
-      });
+      let bed = null;
+      if (bedId) {
+        bed = await tx.bed.findUnique({
+          where: { id: bedId },
+          include: { ward: { select: { id: true, name: true } } },
+        });
 
-      if (!bed) {
-        throw new AdminServiceError(404, 'Selected bed was not found', 'BED_NOT_FOUND');
-      }
+        if (!bed) {
+          throw new AdminServiceError(404, 'Selected bed was not found', 'BED_NOT_FOUND');
+        }
 
-      if (wardId && bed.wardId !== wardId) {
-        throw new AdminServiceError(400, 'Selected bed does not belong to the chosen ward', 'BED_WARD_MISMATCH');
-      }
-
-      if (bed.isOccupied) {
-        throw new AdminServiceError(409, 'Selected bed is currently occupied', 'BED_OCCUPIED');
+        if (bed.isOccupied) {
+          throw new AdminServiceError(409, 'Selected bed is currently occupied', 'BED_OCCUPIED');
+        }
       }
 
       const existingPatient = await tx.patient.findUnique({
@@ -192,7 +187,7 @@ export async function checkInPatientService(rawBody: unknown) {
       if (existingPatient && existingPatient.isArchived) {
         nextPatient = await tx.patient.update({
           where: { id: existingPatient.id },
-          data: {
+          data: ({
             firstName,
             lastName,
             diagnosis,
@@ -200,39 +195,37 @@ export async function checkInPatientService(rawBody: unknown) {
             checkedInAt: new Date(),
             checkedOutAt: null,
             isArchived: false,
-            doctorId: null,
-            wardId: bed.wardId,
-            bedId: bed.id,
-          },
+            doctor: { disconnect: true },
+            bed: bed ? { connect: { id: bed.id } } : undefined,
+          } as any),
           include: {
-            ward: { select: { id: true, name: true } },
-            bed: { select: { id: true, label: true, cameraStatus: true, isOccupied: true } },
+            bed: { include: { ward: { select: { id: true, name: true } } } },
             doctor: { select: { id: true, email: true } },
           },
         });
       } else {
         nextPatient = await tx.patient.create({
-          data: {
+          data: ({
             firstName,
             lastName,
             nationalId,
             diagnosis,
             medicalHistory,
-            wardId: bed.wardId,
-            bedId: bed.id,
-          },
+            bed: bed ? { connect: { id: bed.id } } : undefined,
+          } as any),
           include: {
-            ward: { select: { id: true, name: true } },
-            bed: { select: { id: true, label: true, cameraStatus: true, isOccupied: true } },
+            bed: { include: { ward: { select: { id: true, name: true } } } },
             doctor: { select: { id: true, email: true } },
           },
         });
       }
 
-      await tx.bed.update({
-        where: { id: bed.id },
-        data: { isOccupied: true },
-      });
+      if (bed) {
+        await tx.bed.update({
+          where: { id: bed.id },
+          data: { isOccupied: true },
+        });
+      }
 
       return nextPatient;
     });
@@ -242,7 +235,7 @@ export async function checkInPatientService(rawBody: unknown) {
     if (err instanceof AdminServiceError) {
       throw err;
     }
-
+    console.error("🔴 EROAREA REALĂ DIN SPATE:", err);
     throw new AdminServiceError(500, 'Unable to complete check-in', 'CHECKIN_FAILED');
   }
 }
@@ -255,8 +248,7 @@ export async function checkOutPatientService(patientIdInput: string | undefined)
       const patient = await tx.patient.findUnique({
         where: { id: patientId },
         include: {
-          ward: { select: { id: true, name: true } },
-          bed: { select: { id: true, label: true, cameraStatus: true, isOccupied: true } },
+          bed: { include: { ward: { select: { id: true, name: true } } } },
           doctor: { select: { id: true, email: true } },
         },
       });
@@ -284,16 +276,36 @@ export async function checkOutPatientService(patientIdInput: string | undefined)
           doctorId: null,
         },
         include: {
-          ward: { select: { id: true, name: true } },
-          bed: { select: { id: true, label: true, cameraStatus: true, isOccupied: true } },
-          doctor: { select: { id: true, email: true } },
+          bed: {
+            // Am eliminat complet 'include' de aici și am lăsat doar 'select'
+            select: {
+              id: true,
+              label: true,
+              cameraStatus: true,
+              isOccupied: true,
+              ward: { // Relația ward vine acum ca un select normal în interiorul lui bed
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
+            },
+          },
+          doctor: {
+            select: {
+              id: true,
+              email: true,
+            },
+          },
         },
       });
 
-      await tx.bed.update({
-        where: { id: patient.bedId },
-        data: { isOccupied: false },
-      });
+      if (patient.bedId) {
+        await tx.bed.update({
+          where: { id: patient.bedId },
+          data: { isOccupied: false },
+        });
+      }
 
       return updatedPatient;
     });
@@ -303,6 +315,7 @@ export async function checkOutPatientService(patientIdInput: string | undefined)
     if (err instanceof AdminServiceError) {
       throw err;
     }
+    console.error("🔴 EROAREA REALĂ DIN SPATE:", err);
 
     throw new AdminServiceError(500, 'Unable to complete check-out', 'CHECKOUT_FAILED');
   }
