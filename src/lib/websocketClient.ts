@@ -61,7 +61,6 @@ export default class WebSocketClient {
             return;
           }
 
-          // Blob or other
           if (ev.data instanceof Blob) {
             ev.data.text().then((t) => {
               try {

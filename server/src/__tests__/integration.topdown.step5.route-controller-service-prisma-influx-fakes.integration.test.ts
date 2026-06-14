@@ -82,7 +82,6 @@ describeContainers('Depth-first Step 5: Time-series/Telemetry (Postgres + Influx
       })
       .withExposedPorts(8086)
       .withWaitStrategy(
-        // Așteptăm ca endpoint-ul de health să returneze 200 OK
         Wait.forHttp('/health', 8086)
           .withStartupTimeout(180000) // 3 minute, să fim siguri
       )

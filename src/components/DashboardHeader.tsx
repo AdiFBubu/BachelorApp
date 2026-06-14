@@ -115,11 +115,6 @@ export const DashboardHeader = ({
             })}
           </div> */}
 
-          {/* <div className="flex items-center space-x-2 px-4 py-2 bg-slate-800 rounded-lg">
-            <Zap className="w-4 h-4 text-teal-400" />
-            <span className="text-sm text-slate-300">CSNN Active</span>
-          </div> */}
-
           <button
             onClick={onTogglePanel}
             className="px-3 py-2 rounded-lg text-sm bg-slate-800 text-slate-300 hover:bg-slate-700"

@@ -49,6 +49,5 @@ export class WsTcpBridge {
   }
 
   public close() {
-    // no-op for now; bridge no longer owns websocket/tcp lifecycle
   }
 }

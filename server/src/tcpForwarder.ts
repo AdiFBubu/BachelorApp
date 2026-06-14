@@ -1,7 +1,6 @@
 import net from 'net';
 
 export class TcpModelClient {
-  // Am schimbat în public pentru a putea fi citite de Orchestrator pentru logare
   public host: string;
   public port: number;
   private socket: net.Socket | null = null;
@@ -14,14 +13,12 @@ export class TcpModelClient {
     this.port = port;
   }
 
-  // Metodă nouă pentru a verifica starea conexiunii
   public isConnected(): boolean {
     return this.socket !== null && !this.socket.destroyed && this.socket.writable;
   }
 
   connect(): Promise<void> {
     return new Promise((resolve, reject) => {
-      // Dacă există deja o conexiune veche/moartă, o închidem
       if (this.socket) {
         this.socket.destroy();
       }
@@ -38,7 +35,7 @@ export class TcpModelClient {
 
       this.socket.on('error', (err) => {
         console.error(`[TCP] Socket error on ${this.port}:`, err.message);
-        this.cleanup(); // Curățăm starea în caz de eroare
+        this.cleanup();
         reject(err);
       });
 
@@ -49,12 +46,10 @@ export class TcpModelClient {
     });
   }
 
-  // Curățare internă a cozilor de așteptare în caz de deconectare
   private cleanup() {
     this.socket = null;
     this.buffer = '';
     this.lineQueue = [];
-    // Notificăm toate promisiunile în așteptare că nu mai vine niciun răspuns
     this.lineResolvers.forEach(resolve => resolve('{"status":"error","message":"Connection lost"}'));
     this.lineResolvers = [];
   }
@@ -94,7 +89,6 @@ export class TcpModelClient {
 
   async sendFrame(jpegBuffer: Buffer): Promise<any> {
     if (!this.isConnected()) {
-        // Încercăm să returnăm un obiect de eroare pe care Bridge-ul să-l poată citi
         return { status: "error", message: "TCP Socket not connected" };
     }
 
@@ -102,14 +96,12 @@ export class TcpModelClient {
     lenBuf.writeUInt32BE(jpegBuffer.length, 0);
 
     return new Promise((resolve, reject) => {
-      // Scriem lungimea, apoi datele
       this.socket!.write(lenBuf, (err) => {
         if (err) return reject(err);
         
         this.socket!.write(jpegBuffer, async (err2) => {
           if (err2) return reject(err2);
           
-          // Așteptăm răspunsul JSON de la model
           const line = await this.receiveLine();
           try {
             resolve(JSON.parse(line));

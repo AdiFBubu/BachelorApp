@@ -77,7 +77,7 @@ from(bucket: "${influxConfig.bucket}")
 `;
 // pivot -> transform from long format (one row per field) to wide format (one row per timestamp with all fields as columns), then we can easily map to our InfluxEmotionPoint type in the code below
 
-  // e.g. for Record<string, unknown>
+// e.g. for Record<string, unknown>
 // {
 //   "_time": "2026-04-15T12:00:00Z", // string "_time"
 //   "anger": 0.15,                   // string "anger"

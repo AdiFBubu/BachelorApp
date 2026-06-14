@@ -150,18 +150,6 @@ export const DoctorDashboard = () => {
     }
   }, [selectedPatientId, panelOpen]);
 
-  // useEffect(() => {
-  //   if (!selectedPatientId) {
-  //     return;
-  //   }
-
-  //   const interval = window.setInterval(() => {
-  //     void loadPatientDetail(selectedPatientId, 'background');
-  //   }, 15000);
-
-  //   return () => window.clearInterval(interval);
-  // }, [selectedPatientId, loadPatientDetail]);
-
   useEffect(() => {
     resetEmotionSession();
     lastReadingPushAtRef.current = 0;
@@ -211,7 +199,7 @@ export const DoctorDashboard = () => {
       });
 
       // Keep persisted and derived alert sections in sync with latest backend processing.
-      // may be improved in the future in terms of efficiency by pushing only new alerts or using WebSocket for real-time updates instead of polling. / getting only the strictly necessary infos
+      // may be improved in the future in terms of efficiency by pushing only new alerts or using WebSocket for real-time updates instead of polling / getting only the strictly necessary info
       // since the emotionHistory already keeps the current timeline of emotions
       void loadPatientDetail(selectedPatientId, 'background');
     } catch {

@@ -284,7 +284,6 @@ export const CameraStreamer = ({ isLive, spikeFlash, modelType, onProbabilities 
       <div className="p-3 flex items-start justify-between">
         <div>
           <div className="text-slate-300 font-medium">Live Camera</div>
-          {/* <div className="text-slate-500 text-xs">Streaming to model via WebSocket</div> */}
           <div className="text-slate-500 text-xs mt-1">
             {isLive ? 'Session Live' : 'Session Paused'}
             {spikeFlash ? ` • Spike: ${spikeFlash}` : ''}
@@ -312,17 +311,8 @@ export const CameraStreamer = ({ isLive, spikeFlash, modelType, onProbabilities 
 
       <div className="flex-1 flex items-center justify-center">
         <div className="relative">
-          {/* <img 
-            src="src/components/user-photo.png" 
-            alt="Default User"
-            className="w-[320px] h-[240px] object-cover rounded-md border border-slate-700" 
-          /> */}
           <video ref={videoRef} className="w-[320px] h-[240px] object-cover rounded-md" muted playsInline />
         </div>
-
-        {/* <div className="ml-4 text-sm text-slate-300">
-          <pre className="whitespace-pre-wrap max-w-xs">{JSON.stringify(lastResp, null, 2)}</pre>
-        </div> */}
       </div>
 
       <div className="flex justify-between items-center w-full p-3">

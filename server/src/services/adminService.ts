@@ -235,7 +235,7 @@ export async function checkInPatientService(rawBody: unknown) {
     if (err instanceof AdminServiceError) {
       throw err;
     }
-    console.error("🔴 EROAREA REALĂ DIN SPATE:", err);
+  
     throw new AdminServiceError(500, 'Unable to complete check-in', 'CHECKIN_FAILED');
   }
 }
@@ -277,13 +277,12 @@ export async function checkOutPatientService(patientIdInput: string | undefined)
         },
         include: {
           bed: {
-            // Am eliminat complet 'include' de aici și am lăsat doar 'select'
             select: {
               id: true,
               label: true,
               cameraStatus: true,
               isOccupied: true,
-              ward: { // Relația ward vine acum ca un select normal în interiorul lui bed
+              ward: {
                 select: {
                   id: true,
                   name: true,
@@ -315,7 +314,6 @@ export async function checkOutPatientService(patientIdInput: string | undefined)
     if (err instanceof AdminServiceError) {
       throw err;
     }
-    console.error("🔴 EROAREA REALĂ DIN SPATE:", err);
 
     throw new AdminServiceError(500, 'Unable to complete check-out', 'CHECKOUT_FAILED');
   }

@@ -59,7 +59,6 @@ describeContainers('Depth-first Step 4: Data Access (Postgres container + Influx
     process.env.DATABASE_URL = databaseUrl;
     process.env.JWT_SECRET = jwtSecretForTests;
 
-    // Step 4 keeps telemetry boundary mocked.
     process.env.INFLUX_URL = '';
     process.env.INFLUX_TOKEN = '';
     process.env.INFLUX_ORG = '';

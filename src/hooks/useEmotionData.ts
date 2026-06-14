@@ -68,7 +68,7 @@ export const useEmotionData = () => {
       time: timeString,
       emotion,
       intensity,
-      message: messages[emotion][Math.floor(Math.random() * messages[emotion].length)], // Randomize message for variety
+      message: messages[emotion][Math.floor(Math.random() * messages[emotion].length)], // randomize message for variety
     };
 
     setClinicalEvents(prev => [event, ...prev].slice(0, 20)); // keep only latest 20 events
@@ -107,12 +107,12 @@ export const useEmotionData = () => {
       return;
     }
     
-    // Map and update emotions atomically
+    // map and update emotions atomically
     const mapped = mapProbsToEmotionData(probs);
     setCurrentEmotions(mapped); // so that UI updates with new emotions
     latestEmotionsRef.current = mapped; // keep ref in sync for history and event detection
 
-    // Detect strong spike and add clinical event
+    // detect strong spike and add clinical event
     const entries = Object.entries(mapped) as [EmotionType, number][];
     if (entries.length > 0) {
       const max = entries.reduce((acc, cur) => (cur[1] > acc[1] ? cur : acc), entries[0]);

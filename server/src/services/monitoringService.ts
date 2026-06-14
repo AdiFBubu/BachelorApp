@@ -148,7 +148,7 @@ function getSeverity(score: number): AlertSeverity {
 
 export function deriveProlongedAlert(
   timeline: EmotionTimelinePoint[],
-  type: AlertType, // what do we want to alert on, either 'DISTRESS' or 'PAIN'
+  type: AlertType, // what we want to alert on, either 'DISTRESS' or 'PAIN'
   threshold: number,
   valueSelector: (point: EmotionTimelinePoint) => number, // how to get the relevant score from a timeline point, either point.distressScore or point.painScore
 ): PatientAlertNotification[] {
